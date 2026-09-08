@@ -1,0 +1,6 @@
+[epel10]
+name=EPEL 10 (nss-mdns only)
+metalink=https://mirrors.fedoraproject.org/metalink?repo=epel-10&arch=x86_64
+gpgcheck=1
+gpgkey=https://dl.fedoraproject.org/pub/epel/RPM-GPG-KEY-EPEL-10
+includepkgs=nss-mdns

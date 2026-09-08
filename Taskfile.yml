@@ -1,0 +1,32 @@
+---
+version: "3"
+
+vars:
+  EE_IMAGE: loudest-office-ee:latest
+
+tasks:
+  ee:build:
+    desc: Build the ansible execution environment
+    dir: ee
+    sources:
+      - execution-environment.yml
+      - requirements.yml
+      - requirements.txt
+      - bindep.txt
+      - known_hosts
+      - centos-appstream.repo
+      - epel.repo
+    cmds:
+      - uv run ansible-builder build --container-runtime podman --tag {{.EE_IMAGE}}
+
+  run:
+    desc: Run the site playbook against the raspi (extra args via CLI_ARGS)
+    dir: ansible
+    cmds:
+      - uv run ansible-navigator run playbooks/site.yml {{.CLI_ARGS}}
+
+  lint:
+    desc: Lint playbooks
+    dir: ansible
+    cmds:
+      - uv run ansible-lint

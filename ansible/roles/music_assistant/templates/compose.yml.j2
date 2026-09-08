@@ -1,0 +1,12 @@
+# https://www.music-assistant.io/installation/
+services:
+  music-assistant:
+    image: ghcr.io/music-assistant/server:latest
+    container_name: music-assistant
+    restart: unless-stopped
+    # required for local player discovery (mDNS/uPnP); web UI on :8095, streams on :8097
+    network_mode: host
+    volumes:
+      - ./data:/data
+    environment:
+      LOG_LEVEL: info

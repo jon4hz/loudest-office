@@ -1,0 +1,63 @@
+---
+- name: Install podman and rootless dependencies
+  ansible.builtin.apt:
+    name:
+      - podman
+      - podman-compose
+      - uidmap
+      - passt
+      - dbus-user-session
+    state: present
+
+- name: Allow rootless containers to bind ports >= 80
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_unprivileged_port_start
+    value: "80"
+    sysctl_file: /etc/sysctl.d/99-podman.conf
+
+- name: Create service user {{ podman_compose_name }}
+  ansible.builtin.user:
+    name: "{{ podman_compose_name }}"
+    shell: /usr/sbin/nologin
+  register: podman_compose_user
+
+- name: Enable linger so the user's systemd instance runs at boot
+  ansible.builtin.command: loginctl enable-linger {{ podman_compose_name }}
+  args:
+    creates: /var/lib/systemd/linger/{{ podman_compose_name }}
+
+- name: Create systemd user directory
+  ansible.builtin.file:
+    path: "{{ podman_compose_user.home }}/.config/systemd/user"
+    state: directory
+    owner: "{{ podman_compose_name }}"
+    group: "{{ podman_compose_name }}"
+    mode: "0750"
+
+- name: Deploy compose file
+  ansible.builtin.template:
+    src: "{{ podman_compose_src }}"
+    dest: "{{ podman_compose_user.home }}/compose.yml"
+    owner: "{{ podman_compose_name }}"
+    group: "{{ podman_compose_name }}"
+    mode: "0640"
+  notify: restart_compose_service
+
+- name: Deploy compose systemd user unit
+  ansible.builtin.template:
+    src: compose.service.j2
+    dest: "{{ podman_compose_user.home }}/.config/systemd/user/compose.service"
+    owner: "{{ podman_compose_name }}"
+    group: "{{ podman_compose_name }}"
+    mode: "0640"
+  notify: restart_compose_service
+
+- name: Enable and start compose service
+  ansible.builtin.systemd_service:
+    name: compose.service
+    scope: user
+    daemon_reload: true
+    enabled: true
+    state: started
+  become: true
+  become_user: "{{ podman_compose_name }}"

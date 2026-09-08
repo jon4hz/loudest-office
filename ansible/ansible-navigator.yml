@@ -1,0 +1,20 @@
+---
+ansible-navigator:
+  ansible:
+    config:
+      path: ansible.cfg
+    inventory:
+      entries:
+        - inventory/hosts.yml
+  execution-environment:
+    container-engine: podman
+    image: localhost/loudest-office-ee:latest
+    pull:
+      policy: never
+    # host avahi socket so nss-mdns in the EE can resolve .local names
+    volume-mounts:
+      - src: /run/avahi-daemon
+        dest: /run/avahi-daemon
+  mode: stdout
+  playbook-artifact:
+    enable: false

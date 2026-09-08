@@ -1,0 +1,21 @@
+---
+- name: Install ufw
+  ansible.builtin.apt:
+    name: ufw
+    state: present
+
+# allow rules first so enabling the firewall can't lock us out of ssh
+- name: Allow inbound ports
+  community.general.ufw:
+    rule: allow
+    port: "{{ item.port }}"
+    proto: "{{ item.proto }}"
+  loop: "{{ base_firewall_allow }}"
+  loop_control:
+    label: "{{ item.proto }}/{{ item.port }}"
+
+- name: Enable firewall and deny inbound by default
+  community.general.ufw:
+    state: enabled
+    policy: deny
+    direction: incoming

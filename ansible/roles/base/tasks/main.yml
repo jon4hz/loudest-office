@@ -1,0 +1,9 @@
+---
+- name: Include package tasks
+  ansible.builtin.include_tasks: 01-packages.yml
+
+- name: Include firewall tasks
+  ansible.builtin.include_tasks: 02-firewall.yml
+
+- name: Include auth tasks
+  ansible.builtin.include_tasks: 03-auth.yml

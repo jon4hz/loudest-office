@@ -1,0 +1,18 @@
+---
+- name: Key-based ssh for {{ ansible_user }}
+  when: base_ssh_authorized_keys | length > 0
+  block:
+    - name: Authorize ssh keys
+      ansible.posix.authorized_key:
+        user: "{{ ansible_user }}"
+        key: "{{ base_ssh_authorized_keys | join('\n') }}"
+
+    - name: Disable ssh password login
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/50-ansible.conf
+        content: |
+          PasswordAuthentication no
+          KbdInteractiveAuthentication no
+          PermitRootLogin no
+        mode: "0644"
+      notify: reload_sshd

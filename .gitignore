@@ -1,0 +1,6 @@
+.venv/
+ee/context/
+ansible/ansible-navigator.log
+ansible/*.json
+__pycache__/
+.task/

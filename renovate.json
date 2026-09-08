@@ -1,0 +1,7 @@
+{
+  "extends": [
+    "github>adfinis/renovate-config",
+    "github>adfinis/renovate-config:app",
+    "github>adfinis/renovate-config:quiet"
+  ]
+}

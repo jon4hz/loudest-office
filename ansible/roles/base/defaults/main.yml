@@ -1,0 +1,12 @@
+---
+base_packages:
+  - kitty-terminfo
+  - vim
+  - htop
+  - du-dust
+
+base_firewall_allow:
+  - { port: 22, proto: tcp } # ssh
+  - { port: 5353, proto: udp } # mDNS (avahi)
+
+base_ssh_authorized_keys: []

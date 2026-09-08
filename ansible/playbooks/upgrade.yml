@@ -1,0 +1,9 @@
+---
+- name: Upgrade the loudest office raspi
+  hosts: raspi
+  become: true
+  tasks:
+    - name: Ensure system packages are up to date
+      ansible.builtin.apt:
+        update_cache: true
+        upgrade: safe

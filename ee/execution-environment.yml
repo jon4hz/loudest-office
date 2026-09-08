@@ -1,0 +1,31 @@
+---
+version: 3
+
+images:
+  base_image:
+    name: docker.io/redhat/ubi10:10.2-1786960026
+
+dependencies:
+  ansible_core:
+    package_pip: ansible-core==2.18.19
+  ansible_runner:
+    package_pip: ansible-runner==2.4.3
+  galaxy: requirements.yml
+  python: requirements.txt
+  system: bindep.txt
+
+additional_build_files:
+  - src: centos-appstream.repo
+    dest: configs
+  - src: epel.repo
+    dest: configs
+  - src: known_hosts
+    dest: configs
+
+additional_build_steps:
+  prepend_base:
+    - COPY _build/configs/centos-appstream.repo _build/configs/epel.repo /etc/yum.repos.d/
+    - RUN $PKGMGR install -y git-core sshpass nss-mdns
+    - COPY _build/configs/known_hosts /etc/ssh/ssh_known_hosts
+    # mdns
+    - "RUN sed -i 's/^hosts:.*/hosts: files mdns_minimal [NOTFOUND=return] dns/' /etc/nsswitch.conf"

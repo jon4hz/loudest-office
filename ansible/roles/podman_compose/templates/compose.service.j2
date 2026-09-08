@@ -1,0 +1,15 @@
+[Unit]
+Description={{ podman_compose_name }} (podman-compose)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=%h
+ExecStart=/usr/bin/podman-compose up -d --force-recreate --remove-orphans
+ExecStop=/usr/bin/podman-compose down
+TimeoutStopSec=120
+
+[Install]
+WantedBy=default.target

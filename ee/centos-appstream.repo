@@ -1,0 +1,7 @@
+# sshpass is in RHEL 10 AppStream but not in the UBI 10 repo subset.
+[centos10-appstream]
+name=CentOS Stream 10 AppStream (sshpass only)
+baseurl=https://mirror.stream.centos.org/10-stream/AppStream/x86_64/os/
+gpgcheck=1
+gpgkey=https://www.centos.org/keys/RPM-GPG-KEY-CentOS-Official-SHA256
+includepkgs=sshpass
