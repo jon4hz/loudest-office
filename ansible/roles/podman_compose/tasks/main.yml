@@ -7,6 +7,7 @@
       - uidmap
       - passt
       - dbus-user-session
+      - acl
     state: present
 
 - name: Allow rootless containers to bind ports >= 80

@@ -16,3 +16,10 @@
           PermitRootLogin no
         mode: "0644"
       notify: reload_sshd
+
+- name: Allow passwordless sudo for {{ ansible_user }}
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/50-{{ ansible_user }}
+    content: "{{ ansible_user }} ALL=(ALL) NOPASSWD: ALL\n"
+    mode: "0440"
+    validate: visudo -cf %s

@@ -7,3 +7,6 @@
 
 - name: Include auth tasks
   ansible.builtin.include_tasks: 03-auth.yml
+
+- name: Include system tasks
+  ansible.builtin.include_tasks: 04-system.yml

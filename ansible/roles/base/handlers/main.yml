@@ -4,3 +4,9 @@
     name: ssh
     state: reloaded
   listen: reload_sshd
+
+- name: Restart journald
+  ansible.builtin.service:
+    name: systemd-journald
+    state: restarted
+  listen: restart_journald

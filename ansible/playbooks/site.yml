@@ -5,11 +5,15 @@
   roles:
     # base setup of the pi
     - role: base
+      tags: [base]
       vars:
         base_firewall_allow:
           - { port: 22, proto: tcp } # ssh
           - { port: 5353, proto: udp } # mDNS
           - { port: 8095, proto: tcp } # music assistant web ui
           - { port: 8097, proto: tcp } # music assistant stream server
+          - { port: 80, proto: tcp } # caddy http -> https redirect
+          - { port: 443, proto: tcp } # caddy https reverse proxy
     # music assistant as a rootless podman-compose service
     - role: music_assistant
+      tags: [music_assistant]

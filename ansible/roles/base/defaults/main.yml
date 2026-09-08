@@ -4,6 +4,12 @@ base_packages:
   - vim
   - htop
   - du-dust
+  - avahi-daemon
+  - unattended-upgrades
+  - needrestart
+
+# cap systemd journal disk usage
+base_journald_max_use: 200M
 
 base_firewall_allow:
   - { port: 22, proto: tcp } # ssh

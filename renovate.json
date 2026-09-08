@@ -3,5 +3,45 @@
     "github>adfinis/renovate-config",
     "github>adfinis/renovate-config:app",
     "github>adfinis/renovate-config:quiet"
+  ],
+  "docker-compose": {
+    "description": "Pick up compose files templated by ansible",
+    "managerFilePatterns": ["/(^|/)compose\\.ya?ml\\.j2$/"]
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Update the base image in ansible-builder EE definition files",
+      "managerFilePatterns": ["/(^|/)execution-environment\\.ya?ml$/"],
+      "matchStrings": [
+        "name:\\s*\"?(?<depName>[a-z0-9][\\w./-]*):(?<currentValue>[a-zA-Z0-9][\\w.-]*)(?:@(?<currentDigest>sha256:[a-f0-9]{64}))?\"?"
+      ],
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Update pinned package_pip dependencies in ansible-builder EE definition files",
+      "managerFilePatterns": ["/(^|/)execution-environment\\.ya?ml$/"],
+      "matchStrings": [
+        "package_pip:\\s*\"?(?<depName>[a-zA-Z0-9][\\w.-]*(?:\\[[\\w,.-]+\\])?)==(?<currentValue>[0-9][\\w.!+-]*)\"?"
+      ],
+      "datasourceTemplate": "pypi"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "UBI base image tags (e.g. 10.2-1786960026) follow Red Hat versioning",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": [
+        "docker.io/redhat/ubi*",
+        "registry.access.redhat.com/ubi**"
+      ],
+      "versioning": "redhat"
+    },
+    {
+      "description": "Group ansible-core and ansible-runner into a single MR",
+      "matchPackageNames": ["ansible-core", "ansible-runner"],
+      "groupName": "ansible runtime"
+    }
   ]
 }

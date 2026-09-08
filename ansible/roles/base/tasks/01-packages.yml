@@ -5,3 +5,18 @@
     state: present
     update_cache: true
     update_cache_retries: 3
+
+- name: Enable unattended security upgrades
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+    mode: "0644"
+
+- name: Restart services automatically after upgrades
+  ansible.builtin.copy:
+    dest: /etc/needrestart/conf.d/50-auto.conf
+    content: |
+      $nrconf{restart} = exists($ENV{DEBIAN_FRONTEND}) && $ENV{DEBIAN_FRONTEND} eq 'noninteractive' ? 'a' : 'i';
+    mode: "0644"

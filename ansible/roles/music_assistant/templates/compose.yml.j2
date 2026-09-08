@@ -1,7 +1,7 @@
-# https://www.music-assistant.io/installation/
+---
 services:
   music-assistant:
-    image: ghcr.io/music-assistant/server:latest
+    image: ghcr.io/music-assistant/server:2.10.2
     container_name: music-assistant
     restart: unless-stopped
     # required for local player discovery (mDNS/uPnP); web UI on :8095, streams on :8097
@@ -10,3 +10,12 @@ services:
       - ./data:/data
     environment:
       LOG_LEVEL: info
+
+  caddy:
+    image: docker.io/caddy:2.11.4
+    container_name: caddy
+    restart: unless-stopped
+    network_mode: host
+    command: caddy reverse-proxy --from {{ ansible_host }} --to localhost:8095 --internal-certs
+    volumes:
+      - ./caddy:/data
