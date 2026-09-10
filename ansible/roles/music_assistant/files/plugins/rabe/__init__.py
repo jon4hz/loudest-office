@@ -10,8 +10,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import aiohttp
+from music_assistant_models.config_entries import ConfigEntry, ConfigValueOption
 from music_assistant.models.music_provider import MusicProvider
 from music_assistant_models.enums import (
+    ConfigEntryType,
     ContentType,
     ImageType,
     MediaType,
@@ -34,12 +36,13 @@ from music_assistant_models.streamdetails import StreamDetails, StreamMetadata
 if TYPE_CHECKING:
     from music_assistant import MusicAssistant
     from music_assistant.models import ProviderInstanceType
-    from music_assistant_models.config_entries import ConfigEntry, ProviderConfig
+    from music_assistant_models.config_entries import ProviderConfig
     from music_assistant_models.provider import ProviderManifest
 
 RADIO_ID = "rabe"
 ICON = Path(__file__).with_name("icon.svg")
-STREAM_URL = "https://stream.rabe.ch/livestream/rabe-hd.mp3"
+STREAM_URL = "https://stream.rabe.ch/livestream/rabe-{quality}.mp3"
+CONF_QUALITY = "quality"
 TICKER_URL = "https://songticker.rabe.ch/songticker/0.9.3/current.xml"
 NS = {"t": "http://rabe.ch/schema/ticker.xsd", "xlink": "http://www.w3.org/1999/xlink"}
 METADATA_REFRESH_INTERVAL = 15
@@ -99,7 +102,19 @@ class RabeProvider(MusicProvider):
 
     async def get_config_entries(self) -> tuple[ConfigEntry, ...]:
         """Return Config entries to setup this provider."""
-        return ()
+        return (
+            ConfigEntry(
+                key=CONF_QUALITY,
+                type=ConfigEntryType.STRING,
+                label="Stream quality",
+                options=[
+                    ConfigValueOption("hd", "HD (320 kbps)"),
+                    ConfigValueOption("mid", "Medium (192 kbps)"),
+                    ConfigValueOption("low", "Low (128 kbps)"),
+                ],
+                default_value="hd",
+            ),
+        )
 
     async def browse(self, path: str) -> Sequence[MediaItemType | BrowseFolder]:
         """Browse: a single radio station."""
@@ -147,7 +162,7 @@ class RabeProvider(MusicProvider):
             audio_format=AudioFormat(content_type=ContentType.MP3),
             media_type=MediaType.RADIO,
             stream_type=StreamType.HTTP,
-            path=STREAM_URL,
+            path=STREAM_URL.format(quality=self.config.get_value(CONF_QUALITY)),
             can_seek=False,
             allow_seek=False,
             stream_metadata_update_callback=self._update_metadata,
