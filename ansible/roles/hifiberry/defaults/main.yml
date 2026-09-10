@@ -1,0 +1,5 @@
+---
+# Studio DAC/ADC XLR uses the DAC+ ADC Pro overlay, see
+# https://www.hifiberry.com/docs/data-sheets/datasheet-studio-dac-adc/
+hifiberry_overlay: hifiberry-dacplusadcpro
+hifiberry_config: /boot/firmware/config.txt

@@ -1,0 +1,25 @@
+---
+# https://www.hifiberry.com/docs/software/configuring-linux-3-18-x/
+- name: Disable onboard audio
+  ansible.builtin.lineinfile:
+    path: "{{ hifiberry_config }}"
+    regexp: '^#?dtparam=audio='
+    line: dtparam=audio=off
+  notify: reboot
+
+- name: Disable HDMI audio
+  ansible.builtin.lineinfile:
+    path: "{{ hifiberry_config }}"
+    regexp: '^dtoverlay=vc4-kms-v3d'
+    line: dtoverlay=vc4-kms-v3d,noaudio
+  notify: reboot
+
+- name: Enable HiFiBerry overlay
+  ansible.builtin.lineinfile:
+    path: "{{ hifiberry_config }}"
+    regexp: '^dtoverlay=hifiberry-'
+    line: dtoverlay={{ hifiberry_overlay }}
+  notify: reboot
+
+- name: Apply device tree changes
+  ansible.builtin.meta: flush_handlers

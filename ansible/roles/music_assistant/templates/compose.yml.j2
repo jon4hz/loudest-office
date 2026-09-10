@@ -11,6 +11,23 @@ services:
     environment:
       LOG_LEVEL: info
 
+  sendspin:
+    image: ghcr.io/music-assistant/local-audio-addon:0.1.13
+    container_name: sendspin
+    restart: unless-stopped
+    network_mode: host
+    devices:
+      - /dev/snd:/dev/snd
+    group_add:
+      - keep-groups
+    volumes:
+      - ./sendspin:/data
+    environment:
+      SENDSPIN_NAME: loudest-office
+      SENDSPIN_SERVER: 127.0.0.1:8927
+      SENDSPIN_OUTPUT: alsa:hw:CARD=sndrpihifiberry,DEV=0
+      SENDSPIN_ID: loudest-office
+
   caddy:
     image: docker.io/caddy:2.11.4
     container_name: caddy

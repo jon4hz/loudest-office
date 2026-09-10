@@ -4,3 +4,4 @@ dependencies:
     vars:
       podman_compose_name: musicassistant
       podman_compose_src: compose.yml.j2
+      podman_compose_user_groups: [audio] # sendspin needs /dev/snd

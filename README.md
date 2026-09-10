@@ -30,3 +30,6 @@ We will then use the HiFiBerry DAC output to feed the signal to the CB10 speaker
 * uv
 * working avahi (mDNS) setup
 
+
+
+https://www.hifiberry.com/docs/data-sheets/datasheet-studio-dac-adc/

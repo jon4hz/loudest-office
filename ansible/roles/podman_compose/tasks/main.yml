@@ -20,12 +20,19 @@
   ansible.builtin.user:
     name: "{{ podman_compose_name }}"
     shell: /usr/sbin/nologin
+    groups: "{{ podman_compose_user_groups }}"
+    append: true
   register: podman_compose_user
+  notify: restart_user_manager
 
 - name: Enable linger so the user's systemd instance runs at boot
   ansible.builtin.command: loginctl enable-linger {{ podman_compose_name }}
   args:
     creates: /var/lib/systemd/linger/{{ podman_compose_name }}
+
+# a running user manager keeps its old group list; restart it before the containers start
+- name: Apply user changes
+  ansible.builtin.meta: flush_handlers
 
 - name: Create systemd user directory
   ansible.builtin.file:

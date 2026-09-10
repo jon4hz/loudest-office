@@ -1,3 +1,5 @@
 ---
 
 podman_compose_src: "{{ podman_compose_name }}/compose.yml.j2"
+# extra groups for the service user, e.g. audio for /dev/snd access
+podman_compose_user_groups: []
