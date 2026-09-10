@@ -8,6 +8,9 @@ services:
     network_mode: host
     volumes:
       - ./data:/data
+      # custom providers live in the server's own providers package; the python
+      # version in this path is tied to the image tag above (.python-version upstream)
+      - ./plugins/rabe:/app/venv/lib/python3.14/site-packages/music_assistant/providers/rabe:ro
     environment:
       LOG_LEVEL: info
 

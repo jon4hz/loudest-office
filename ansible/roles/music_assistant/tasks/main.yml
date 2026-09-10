@@ -1,0 +1,9 @@
+---
+- name: Deploy custom providers
+  ansible.builtin.copy:
+    src: plugins/
+    dest: "{{ podman_compose_user.home }}/plugins/"
+    owner: "{{ podman_compose_user.name }}"
+    group: "{{ podman_compose_user.name }}"
+    mode: u=rwX,g=rX,o=
+  notify: restart_compose_service

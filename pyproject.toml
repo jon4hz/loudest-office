@@ -7,3 +7,15 @@ dependencies = [
     "ansible-lint==26.8.0",
     "ansible-navigator==26.8.0",
 ]
+
+[dependency-groups]
+dev = [
+    "music-assistant",
+]
+
+[tool.uv.sources]
+music-assistant = { git = "https://github.com/music-assistant/server.git", rev = "2.10.2" }
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"

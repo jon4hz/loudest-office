@@ -1,0 +1,11 @@
+{
+  "type": "music",
+  "domain": "rabe",
+  "stage": "alpha",
+  "name": "RaBe",
+  "description": "Radio Bern RaBe live stream with the current show and track from the songticker.",
+  "codeowners": ["@jon4hz"],
+  "requirements": [],
+  "documentation": "https://rabe.ch",
+  "multi_instance": false
+}
