@@ -9,10 +9,13 @@ import (
 )
 
 // Palette colours a pixel of the analyzer. At is called per band and row
-// (y=0 is the bottom row); a zero color means "do not draw".
+// (y=0 is the bottom row); a zero color means "do not draw". A Relative
+// palette sees the bar's own height as height, so its whole gradient fits
+// inside every bar instead of being pinned to screen rows.
 type Palette struct {
-	Name string
-	At   func(band, nBands, y, height int) (bar, peak color.RGBA)
+	Name     string
+	Relative bool
+	At       func(band, nBands, y, height int) (bar, peak color.RGBA)
 }
 
 var (
@@ -27,10 +30,25 @@ var (
 // Palettes are the shipped palettes, in cycling order. Ported from
 // github.com/donnersm/FFT_ESP32_Analyzer colour modes.
 var Palettes = []Palette{
-	{"rainbow", func(band, n, _, _ int) (color.RGBA, color.RGBA) {
+	{Name: "rainbow", At: func(band, n, _, _ int) (color.RGBA, color.RGBA) {
 		return hsv(float64(band) / float64(n)), white
 	}},
-	{"tribar", func(_, _, y, h int) (color.RGBA, color.RGBA) {
+	{Name: "bi", Relative: true, At: func(_, _, y, h int) (color.RGBA, color.RGBA) { // bi pride flag, stripes 2:1:2
+		c := color.RGBA{0xD6, 0x02, 0x70, 255} // magenta
+		switch f := float64(y) / float64(h); {
+		case f >= 0.6:
+			c = color.RGBA{0x00, 0x38, 0xA8, 255} // blue
+		case f >= 0.4:
+			c = color.RGBA{0x9B, 0x4F, 0x96, 255} // purple
+		}
+		return c, white
+	}},
+	{Name: "trans", At: func(_, _, y, h int) (color.RGBA, color.RGBA) { // trans pride flag, 5 equal stripes
+		blue, pink := color.RGBA{0x5B, 0xCE, 0xFA, 255}, color.RGBA{0xF5, 0xA9, 0xB8, 255}
+		c := [...]color.RGBA{blue, pink, white, pink, blue}[min(y*5/h, 4)]
+		return c, c
+	}},
+	{Name: "tribar", At: func(_, _, y, h int) (color.RGBA, color.RGBA) {
 		c := green
 		switch f := float64(y) / float64(h); {
 		case f >= 2.0/3:
@@ -40,15 +58,15 @@ var Palettes = []Palette{
 		}
 		return c, c
 	}},
-	{"red", func(_, _, _, _ int) (color.RGBA, color.RGBA) { return red, blue }},
-	{"blue", func(_, _, _, _ int) (color.RGBA, color.RGBA) { return blue, red }},
-	{"purple", func(_, _, y, h int) (color.RGBA, color.RGBA) {
+	{Name: "red", At: func(_, _, _, _ int) (color.RGBA, color.RGBA) { return red, blue }},
+	{Name: "blue", At: func(_, _, _, _ int) (color.RGBA, color.RGBA) { return blue, red }},
+	{Name: "purple", At: func(_, _, y, h int) (color.RGBA, color.RGBA) {
 		return gradient(frac(y, h), color.RGBA{0, 212, 255, 255}, color.RGBA{179, 0, 255, 255}), white
 	}},
-	{"outrun", func(_, _, y, h int) (color.RGBA, color.RGBA) {
+	{Name: "outrun", At: func(_, _, y, h int) (color.RGBA, color.RGBA) {
 		return gradient(frac(y, h), color.RGBA{141, 0, 100, 255}, color.RGBA{255, 192, 0, 255}, color.RGBA{0, 5, 255, 255}), none
 	}},
-	{"peaks", func(_, _, _, _ int) (color.RGBA, color.RGBA) { return none, blue }},
+	{Name: "peaks", At: func(_, _, _, _ int) (color.RGBA, color.RGBA) { return none, blue }},
 }
 
 // PaletteByName looks a palette up case-insensitively.

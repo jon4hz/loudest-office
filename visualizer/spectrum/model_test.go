@@ -1,6 +1,7 @@
 package spectrum
 
 import (
+	"image/color"
 	"math"
 	"strings"
 	"testing"
@@ -179,5 +180,23 @@ func TestSideLayoutsMeetAtCentre(t *testing.T) {
 		if got := litColumns(m)[0]; got != tc.want {
 			t.Errorf("%v: got %q", tc.layout, got)
 		}
+	}
+}
+
+func TestRelativePaletteScalesToBar(t *testing.T) {
+	p, _ := PaletteByName("bi")
+	m := New(Channels(1), Bands(1), FFTSize(256), Size(1, 10), WithPalette(p))
+	m.bars[0][0] = 0.5 // 5 px tall: the whole flag must fit in those 5 rows
+	m.draw()
+	f := m.Frame()
+	magenta, purple, blue := color.RGBA{0xD6, 0x02, 0x70, 255}, color.RGBA{0x9B, 0x4F, 0x96, 255}, color.RGBA{0x00, 0x38, 0xA8, 255}
+	want := []color.RGBA{magenta, magenta, purple, blue, blue} // bottom to top
+	for y, w := range want {
+		if got := f[9-y][0]; got != w {
+			t.Fatalf("row %d from bottom: got %v want %v", y, got, w)
+		}
+	}
+	if f[4][0].A != 0 {
+		t.Fatal("row above the bar should be off")
 	}
 }

@@ -207,8 +207,12 @@ func (m *Model) draw() {
 			if flipped {
 				x = left + (m.bands-1-b)*barW + gap // gap on the centre side
 			}
+			ph := height
+			if m.palette.Relative {
+				ph = max(barH, 1)
+			}
 			for y := 0; y < height; y++ {
-				bar, peak := m.palette.At(b, m.bands, y, height)
+				bar, peak := m.palette.At(b, m.bands, y, ph)
 				c := color.RGBA{}
 				if y < barH {
 					c = bar
