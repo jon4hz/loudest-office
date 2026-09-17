@@ -46,7 +46,9 @@ func (c *Config) defaults() {
 	case "arecord":
 		c.Args = []string{"-q", "-t", "raw", "-f", "S16_LE", "-r", r, "-c", ch, "-D", c.Device}
 	default:
-		c.Args = []string{"--raw", "--format=s16le", "--rate=" + r, "--channels=" + ch, "-d", c.Device}
+		// Without a latency hint pipewire-pulse hands parec ~380 ms fragments,
+		// which makes the display step instead of flow.
+		c.Args = []string{"--raw", "--format=s16le", "--rate=" + r, "--channels=" + ch, "--latency-msec=20", "-d", c.Device}
 	}
 }
 

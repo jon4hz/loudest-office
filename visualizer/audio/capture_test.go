@@ -2,6 +2,7 @@ package audio
 
 import (
 	"context"
+	"slices"
 	"testing"
 )
 
@@ -36,5 +37,13 @@ func TestStartReadsBlocks(t *testing.T) {
 func TestStartMissingCommand(t *testing.T) {
 	if _, err := Start(context.Background(), Config{Command: "definitely-not-a-binary"}); err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestParecArgsRequestLowLatency(t *testing.T) {
+	c := Config{}
+	c.defaults()
+	if !slices.Contains(c.Args, "--latency-msec=20") {
+		t.Fatalf("parec args lack a latency hint (default fragments are ~380 ms): %v", c.Args)
 	}
 }
