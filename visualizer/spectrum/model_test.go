@@ -200,3 +200,36 @@ func TestRelativePaletteScalesToBar(t *testing.T) {
 		t.Fatal("row above the bar should be off")
 	}
 }
+
+func TestDriftRollsColoursAcrossBands(t *testing.T) {
+	p, ok := PaletteByName("drift")
+	if !ok || !p.Animate {
+		t.Fatal("drift should exist and be animated")
+	}
+	m := New(Channels(1), Bands(4), FFTSize(256), Size(4, 2), WithPalette(p))
+	for b := range m.bars[0] {
+		m.bars[0][b] = 1
+	}
+	m.draw()
+	before := append([]color.RGBA(nil), m.Frame()[1]...)
+	m.tick = 8 // one step
+	m.draw()
+	after := m.Frame()[1]
+	if after[0] != before[1] || after[3] != before[0] {
+		t.Fatalf("colours did not roll by one band:\n%v\n%v", before, after)
+	}
+}
+
+func TestEveryPaletteDrawsInEveryLayout(t *testing.T) {
+	for _, p := range Palettes {
+		for l := Stacked; l <= HMirrored; l++ {
+			m := New(Channels(2), Bands(4), FFTSize(256), Size(16, 8), WithLayout(l), WithPalette(p))
+			for ch := range m.bars {
+				for b := range m.bars[ch] {
+					m.bars[ch][b], m.peaks[ch][b] = 0.5, 0.9
+				}
+			}
+			m.draw() // must not panic
+		}
+	}
+}

@@ -22,6 +22,7 @@ type Model struct {
 	gain, agc                      float64 // agc is the auto-gain offset in dB
 	autoGain                       bool
 	layout                         Layout
+	tick                           int // blocks seen, drives animated palettes
 	fixedW, fixedH, w, h           int
 
 	window []float32
@@ -133,6 +134,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.draw()
 		}
 	case SamplesMsg:
+		m.tick++
 		var loudest float32
 		for ch := 0; ch < m.channels && ch < len(msg); ch++ {
 			if len(msg[ch]) < m.fftSize {
@@ -211,8 +213,13 @@ func (m *Model) draw() {
 			if m.palette.Relative {
 				ph = max(barH, 1)
 			}
+			pb := b
+			if m.palette.Animate {
+				// ponytail: fixed roll speed of one band per 8 blocks (~5 bands/s)
+				pb = (b + m.tick/8) % m.bands
+			}
 			for y := 0; y < height; y++ {
-				bar, peak := m.palette.At(b, m.bands, y, ph)
+				bar, peak := m.palette.At(pb, m.bands, y, ph)
 				c := color.RGBA{}
 				if y < barH {
 					c = bar

@@ -6,7 +6,7 @@ import (
 )
 
 func TestPalettesCoverEveryRow(t *testing.T) {
-	if len(Palettes) < 9 {
+	if len(Palettes) < 17 {
 		t.Fatalf("expected the shipped palettes, got %d", len(Palettes))
 	}
 	for _, p := range Palettes {
@@ -58,5 +58,58 @@ func TestTransStripes(t *testing.T) {
 		if got, _ := p.At(0, 8, i*2, 10); got != w {
 			t.Fatalf("stripe %d: got %v want %v", i, got, w)
 		}
+	}
+}
+
+func TestNewPalettes(t *testing.T) {
+	at := func(name string, y, h int) color.RGBA {
+		p, ok := PaletteByName(name)
+		if !ok {
+			t.Fatalf("%s missing", name)
+		}
+		c, _ := p.At(0, 8, y, h)
+		return c
+	}
+	if at("fire", 9, 10) != white || at("synthwave", 9, 10) != white {
+		t.Error("fire and synthwave need a white tip on the top pixel")
+	}
+	if at("fire", 0, 10) != (color.RGBA{128, 0, 0, 255}) {
+		t.Errorf("fire bottom should be dark red, got %v", at("fire", 0, 10))
+	}
+	if at("ukraine", 0, 10) != (color.RGBA{255, 213, 0, 255}) || at("ukraine", 5, 10) != (color.RGBA{0, 87, 183, 255}) {
+		t.Error("ukraine should be yellow below blue")
+	}
+	if at("white", 0, 10) != white || at("ice", 9, 10) != white {
+		t.Error("white bars / ice top should be white")
+	}
+	for _, name := range []string{"fire", "ice", "ukraine", "synthwave", "bi", "trans", "antifa"} {
+		if p, _ := PaletteByName(name); !p.Relative {
+			t.Errorf("%s should be relative", name)
+		}
+	}
+	// freq colours by band, not height; matrix gets brighter with the band
+	freq, _ := PaletteByName("freq")
+	lo, _ := freq.At(0, 8, 0, 10)
+	hi, _ := freq.At(7, 8, 0, 10)
+	if lo == hi {
+		t.Error("freq should differ between bands")
+	}
+	mat, _ := PaletteByName("matrix")
+	dim, _ := mat.At(0, 8, 0, 10)
+	bright, _ := mat.At(7, 8, 0, 10)
+	if dim.G >= bright.G || dim.R != 0 || dim.B != 0 {
+		t.Errorf("matrix should be green getting brighter by band: %v %v", dim, bright)
+	}
+}
+
+func TestAntifaStripes(t *testing.T) {
+	p, ok := PaletteByName("antifa")
+	if !ok || !p.Relative {
+		t.Fatal("antifa missing or not relative")
+	}
+	lo, _ := p.At(0, 8, 0, 10)
+	hi, _ := p.At(0, 8, 5, 10)
+	if lo != (color.RGBA{228, 0, 43, 255}) || hi != (color.RGBA{50, 50, 50, 255}) {
+		t.Fatalf("want red below near-black, got %v %v", lo, hi)
 	}
 }
