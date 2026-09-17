@@ -106,3 +106,78 @@ func maxLevel(v []float32) float32 {
 	}
 	return mx
 }
+
+// litColumns returns, per row, which x positions are lit, as a compact string.
+func litColumns(m Model) []string {
+	var out []string
+	for _, row := range m.Frame() {
+		s := make([]byte, len(row))
+		for x, px := range row {
+			s[x] = '.'
+			if px.A != 0 {
+				s[x] = '#'
+			}
+		}
+		out = append(out, string(s))
+	}
+	return out
+}
+
+func TestLayouts(t *testing.T) {
+	for _, tc := range []struct {
+		layout    Layout
+		top, last string // first and last frame row with ch0 band0 and ch1 band0 full
+	}{
+		{Stacked, "###.............", "............###."},
+		{SideBySide, "##......##......", "##......##......"},
+		{Mirrored, "......####......", "......####......"},
+	} {
+		m := New(Channels(2), Bands(4), FFTSize(256), Size(16, 8), WithLayout(tc.layout))
+		m.bars[0][0], m.bars[1][0] = 1, 1
+		if tc.layout == Stacked {
+			m.bars[1][0], m.bars[1][3] = 0, 0.25 // one pixel of ch1's top band, bottom right
+		}
+		m.draw()
+		rows := litColumns(m)
+		if rows[0] != tc.top || rows[7] != tc.last {
+			t.Errorf("%v:\n%s", tc.layout, strings.Join(rows, "\n"))
+		}
+	}
+}
+
+func TestHMirrorMeetsAtCentreLine(t *testing.T) {
+	m := New(Channels(2), Bands(4), FFTSize(256), Size(16, 8), WithLayout(HMirrored))
+	m.bars[0][0], m.bars[1][0] = 0.5, 0.5 // ch0 grows up from the centre, ch1 down
+	m.draw()
+	want := []string{
+		"................",
+		"................",
+		"###.............",
+		"###.............",
+		"###.............",
+		"###.............",
+		"................",
+		"................",
+	}
+	if got := litColumns(m); strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("got:\n%s", strings.Join(got, "\n"))
+	}
+}
+
+func TestSideLayoutsMeetAtCentre(t *testing.T) {
+	// 3 bands of width 2 in an 8-wide half leave 2 px over; they must not end up in the middle.
+	for _, tc := range []struct {
+		layout Layout
+		want   string
+	}{
+		{Mirrored, "......####......"},
+		{SideBySide, "..##....##......"},
+	} {
+		m := New(Channels(2), Bands(3), FFTSize(256), Size(16, 8), WithLayout(tc.layout))
+		m.bars[0][0], m.bars[1][0] = 1, 1
+		m.draw()
+		if got := litColumns(m)[0]; got != tc.want {
+			t.Errorf("%v: got %q", tc.layout, got)
+		}
+	}
+}

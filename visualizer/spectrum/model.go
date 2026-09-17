@@ -21,6 +21,7 @@ type Model struct {
 	peakHold                       int
 	gain, agc                      float64 // agc is the auto-gain offset in dB
 	autoGain                       bool
+	layout                         Layout
 	fixedW, fixedH, w, h           int
 
 	window []float32
@@ -48,6 +49,33 @@ func Gain(db float64) Option            { return func(m *Model) { m.gain = db } 
 // off fast when a band clips and creeps up slowly while everything is low.
 // It freezes during silence so pauses do not amplify the noise floor.
 func AutoGain(on bool) Option { return func(m *Model) { m.autoGain = on } }
+
+// Layout says how channels share the frame.
+type Layout int
+
+const (
+	Stacked    Layout = iota // one spectrum per row, top to bottom
+	SideBySide               // one spectrum per column, left to right
+	Mirrored                 // like SideBySide, but even channels are flipped so band 0 meets at the centre
+	HMirrored                // like Stacked, but odd channels grow downwards so the bars meet at the centre line
+)
+
+func (l Layout) String() string { return [...]string{"stacked", "side", "mirror", "hmirror"}[l] }
+
+// ParseLayout accepts the names printed by Layout.String.
+func ParseLayout(name string) (Layout, bool) {
+	for l := Stacked; l <= HMirrored; l++ {
+		if l.String() == name {
+			return l, true
+		}
+	}
+	return Stacked, false
+}
+
+func WithLayout(l Layout) Option { return func(m *Model) { m.layout = l } }
+
+func (m *Model) SetLayout(l Layout) { m.layout = l }
+func (m Model) Layout() Layout      { return m.layout }
 
 // Size fixes the frame size in pixels instead of following the window.
 func Size(w, h int) Option { return func(m *Model) { m.fixedW, m.fixedH = w, h } }
@@ -139,8 +167,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	return m, nil
 }
 
-// draw paints bars and peaks of every channel into the frame, channels
-// stacked top to bottom.
+// draw paints bars and peaks of every channel into the frame.
 func (m *Model) draw() {
 	for _, row := range m.frame {
 		clear(row)
@@ -148,8 +175,13 @@ func (m *Model) draw() {
 	if m.w == 0 || m.h == 0 || m.bands == 0 {
 		return
 	}
-	height := m.h / m.channels
-	barW := m.w / m.bands
+	cols, rows := 1, m.channels
+	if m.layout == SideBySide || m.layout == Mirrored {
+		cols, rows = m.channels, 1
+	}
+	height := m.h / rows
+	regionW := m.w / cols
+	barW := regionW / m.bands
 	if barW == 0 || height == 0 {
 		return
 	}
@@ -157,12 +189,24 @@ func (m *Model) draw() {
 	if barW >= 3 {
 		gap = 1
 	}
-	x0 := (m.w - barW*m.bands) / 2
 	for ch := range m.bars {
-		top := ch * height
+		top := (ch / cols) * height
+		left := (ch%cols)*regionW + (regionW-barW*m.bands)/2
+		flipped := m.layout == Mirrored && ch%2 == 0
+		if cols > 1 { // butt both channels against the centre line
+			left = (ch % cols) * regionW
+			if ch%2 == 0 {
+				left += regionW - barW*m.bands
+			}
+		}
+		vflipped := m.layout == HMirrored && ch%2 == 1
 		for b := range m.bars[ch] {
 			barH := int(m.bars[ch][b]*float32(height) + 0.5)
 			peakY := int(m.peaks[ch][b]*float32(height-1) + 0.5)
+			x := left + b*barW
+			if flipped {
+				x = left + (m.bands-1-b)*barW + gap // gap on the centre side
+			}
 			for y := 0; y < height; y++ {
 				bar, peak := m.palette.At(b, m.bands, y, height)
 				c := color.RGBA{}
@@ -175,9 +219,12 @@ func (m *Model) draw() {
 				if c.A == 0 {
 					continue
 				}
-				row := m.frame[top+height-1-y]
-				for x := x0 + b*barW; x < x0+(b+1)*barW-gap; x++ {
-					row[x] = c
+				r := top + height - 1 - y
+				if vflipped {
+					r = top + y
+				}
+				for i := 0; i < barW-gap; i++ {
+					m.frame[r][x+i] = c
 				}
 			}
 		}

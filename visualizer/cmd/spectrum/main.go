@@ -4,9 +4,10 @@
 //	spectrum -bands 16 -palette tribar -gain 6
 //	spectrum -mono                 # one spectrum, channels mixed down
 //	spectrum -autogain             # loudest band always fills the display
+//	spectrum -layout mirror        # stacked (default), side, mirror or hmirror
 //	spectrum -cmd arecord -device hw:0   # on the Pi
 //
-// Keys: q quit, c next palette, +/- bands.
+// Keys: q quit, c next palette, l next layout, +/- bands.
 package main
 
 import (
@@ -52,6 +53,8 @@ func (a app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "c":
 			a.pal = (a.pal + 1) % len(spectrum.Palettes)
 			a.spec.SetPalette(spectrum.Palettes[a.pal])
+		case "l":
+			a.spec.SetLayout((a.spec.Layout() + 1) % (spectrum.HMirrored + 1))
 		case "+", "=":
 			a.spec.SetBands(min(64, a.spec.NumBands()+8))
 		case "-":
@@ -84,6 +87,7 @@ func main() {
 	gain := flag.Float64("gain", 0, "gain in dB")
 	mono := flag.Bool("mono", false, "mix down to one spectrum")
 	autoGain := flag.Bool("autogain", false, "adapt gain so the loudest band fills the display")
+	layoutName := flag.String("layout", "stacked", "channel layout: stacked, side, mirror or hmirror")
 	names := make([]string, len(spectrum.Palettes))
 	for i, p := range spectrum.Palettes {
 		names[i] = p.Name
@@ -91,6 +95,11 @@ func main() {
 	palette := flag.String("palette", "rainbow", "palette: "+strings.Join(names, ", "))
 	flag.Parse()
 
+	layout, ok := spectrum.ParseLayout(*layoutName)
+	if !ok {
+		fmt.Fprintln(os.Stderr, "unknown layout:", *layoutName)
+		os.Exit(2)
+	}
 	pal := 0
 	for i, p := range spectrum.Palettes {
 		if strings.EqualFold(p.Name, *palette) {
@@ -107,7 +116,7 @@ func main() {
 		os.Exit(1)
 	}
 	a := app{cap: cap, pal: pal, spec: spectrum.New(
-		spectrum.Bands(*bands), spectrum.Channels(cfg.Channels), spectrum.Rate(cfg.Rate), spectrum.Gain(*gain), spectrum.AutoGain(*autoGain),
+		spectrum.Bands(*bands), spectrum.Channels(cfg.Channels), spectrum.Rate(cfg.Rate), spectrum.Gain(*gain), spectrum.AutoGain(*autoGain), spectrum.WithLayout(layout),
 		spectrum.WithPalette(spectrum.Palettes[pal]))}
 	final, err := tea.NewProgram(a).Run()
 	cap.Stop()
