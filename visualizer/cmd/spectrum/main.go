@@ -12,12 +12,15 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
+	"math/rand/v2"
 	"os"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/fang"
+	"github.com/spf13/cobra"
 
 	"github.com/jon4hz/loudest-office/visualizer/audio"
 	"github.com/jon4hz/loudest-office/visualizer/spectrum"
@@ -25,11 +28,51 @@ import (
 
 type captureDone struct{}
 
+type loopTick struct{ gen int } // gen guards against ticks from a loop that was toggled off and on
+
+// flavor is one look the auto loop can pick.
+type flavor struct {
+	pal   int
+	lay   spectrum.Layout
+	peaks spectrum.PeakStyle
+}
+
+// nextFlavor draws a random flavor, with the layout taken from layouts, that
+// differs from cur in at least one part.
+func nextFlavor(cur flavor, layouts []spectrum.Layout) flavor {
+	for {
+		f := flavor{rand.IntN(len(spectrum.Palettes)), layouts[rand.IntN(len(layouts))],
+			spectrum.PeakStyle(rand.IntN(int(spectrum.NoPeaks) + 1))}
+		if f != cur {
+			return f
+		}
+	}
+}
+
 type app struct {
-	spec spectrum.Model
-	cap  *audio.Capture
-	pal  int
-	err  error
+	spec     spectrum.Model
+	cap      *audio.Capture
+	pal      int
+	loop     time.Duration // 0 = off
+	interval time.Duration
+	layouts  []spectrum.Layout // the auto loop picks from these
+	gen      int
+	err      error
+}
+
+func (a *app) apply(f flavor) {
+	a.pal = f.pal
+	a.spec.SetPalette(spectrum.Palettes[f.pal])
+	a.spec.SetLayout(f.lay)
+	a.spec.SetPeakStyle(f.peaks)
+}
+
+func (a app) tickLoop() tea.Cmd {
+	if a.loop == 0 {
+		return nil
+	}
+	gen := a.gen
+	return tea.Tick(a.loop, func(time.Time) tea.Msg { return loopTick{gen} })
 }
 
 func (a app) wait() tea.Cmd {
@@ -42,7 +85,7 @@ func (a app) wait() tea.Cmd {
 	}
 }
 
-func (a app) Init() tea.Cmd { return a.wait() }
+func (a app) Init() tea.Cmd { return tea.Batch(a.wait(), a.tickLoop()) }
 
 func (a app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -55,12 +98,29 @@ func (a app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.spec.SetPalette(spectrum.Palettes[a.pal])
 		case "l":
 			a.spec.SetLayout((a.spec.Layout() + 1) % (spectrum.HMirrored + 1))
+		case "p":
+			a.spec.SetPeakStyle((a.spec.PeakStyle() + 1) % (spectrum.NoPeaks + 1))
+		case "a":
+			a.gen++
+			if a.loop != 0 {
+				a.loop = 0
+				return a, nil
+			}
+			a.loop = a.interval
+			a.apply(nextFlavor(flavor{a.pal, a.spec.Layout(), a.spec.PeakStyle()}, a.layouts))
+			return a, a.tickLoop()
 		case "+", "=":
 			a.spec.SetBands(min(64, a.spec.NumBands()+8))
 		case "-":
 			a.spec.SetBands(max(8, a.spec.NumBands()-8))
 		}
 		return a, nil
+	case loopTick:
+		if a.loop == 0 || msg.gen != a.gen {
+			return a, nil
+		}
+		a.apply(nextFlavor(flavor{a.pal, a.spec.Layout(), a.spec.PeakStyle()}, a.layouts))
+		return a, a.tickLoop()
 	case captureDone:
 		a.err = a.cap.Wait()
 		return a, tea.Quit
@@ -79,54 +139,98 @@ func (a app) View() tea.View {
 }
 
 func main() {
-	var cfg audio.Config
-	flag.StringVar(&cfg.Command, "cmd", "parec", "capture command: parec or arecord")
-	flag.StringVar(&cfg.Device, "device", "@DEFAULT_SINK@.monitor", "capture device")
-	flag.IntVar(&cfg.Rate, "rate", 44100, "sample rate")
-	bands := flag.Int("bands", 32, "number of bands")
-	gain := flag.Float64("gain", 0, "gain in dB")
-	mono := flag.Bool("mono", false, "mix down to one spectrum")
-	autoGain := flag.Bool("autogain", false, "adapt gain so the loudest band fills the display")
-	layoutName := flag.String("layout", "stacked", "channel layout: stacked, side, mirror or hmirror")
+	var (
+		cfg                                         audio.Config
+		bands                                       int
+		gain                                        float64
+		mono, autoGain                              bool
+		palette, layoutName, peaksName, loopLayouts string
+		loop                                        time.Duration
+	)
 	names := make([]string, len(spectrum.Palettes))
 	for i, p := range spectrum.Palettes {
 		names[i] = p.Name
 	}
-	palette := flag.String("palette", "rainbow", "palette: "+strings.Join(names, ", "))
-	flag.Parse()
+	cmd := &cobra.Command{
+		Use:   "spectrum",
+		Short: "Terminal spectrum analyzer of the default audio output",
+		Long: `Terminal spectrum analyzer of the default audio output.
 
-	layout, ok := spectrum.ParseLayout(*layoutName)
-	if !ok {
-		fmt.Fprintln(os.Stderr, "unknown layout:", *layoutName)
-		os.Exit(2)
+Keys: q quit, c next palette, l next layout, p next peak style, a toggle auto loop, +/- bands.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return run(cmd.Context(), cfg, bands, gain, mono, autoGain, palette, layoutName, peaksName, loopLayouts, loop)
+		},
 	}
-	pal := 0
+	f := cmd.Flags()
+	f.StringVar(&cfg.Command, "cmd", "parec", "capture command: parec or arecord")
+	f.StringVar(&cfg.Device, "device", "@DEFAULT_SINK@.monitor", "capture device")
+	f.IntVar(&cfg.Rate, "rate", 44100, "sample rate")
+	f.IntVar(&bands, "bands", 32, "number of bands")
+	f.Float64Var(&gain, "gain", 0, "gain in dB")
+	f.BoolVar(&mono, "mono", false, "mix down to one spectrum")
+	f.BoolVar(&autoGain, "autogain", false, "adapt gain so the loudest band fills the display")
+	f.StringVar(&palette, "palette", "rainbow", "palette: "+strings.Join(names, ", "))
+	f.StringVar(&layoutName, "layout", "stacked", "channel layout: stacked, side, mirror or hmirror")
+	f.StringVar(&peaksName, "peaks", "fall", "peak style: fall, fly, beat or none")
+	f.DurationVar(&loop, "loop", 0, "auto loop: pick a random palette/layout/peak style at this interval (0 = off; the a key toggles it at 10s)")
+	f.StringVar(&loopLayouts, "loop-layouts", "mirror,hmirror", "comma-separated layouts the auto loop picks from")
+	if err := fang.Execute(context.Background(), cmd); err != nil {
+		os.Exit(1)
+	}
+}
+
+func run(ctx context.Context, cfg audio.Config, bands int, gain float64, mono, autoGain bool, palette, layoutName, peaksName, loopLayouts string, loop time.Duration) error {
+	layout, ok := spectrum.ParseLayout(layoutName)
+	if !ok {
+		return fmt.Errorf("unknown layout: %s", layoutName)
+	}
+	var layouts []spectrum.Layout
+	for name := range strings.SplitSeq(loopLayouts, ",") {
+		l, ok := spectrum.ParseLayout(strings.TrimSpace(name))
+		if !ok {
+			return fmt.Errorf("unknown layout in --loop-layouts: %s", name)
+		}
+		layouts = append(layouts, l)
+	}
+	peaks, ok := spectrum.ParsePeakStyle(peaksName)
+	if !ok {
+		return fmt.Errorf("unknown peak style: %s", peaksName)
+	}
+	pal := -1
 	for i, p := range spectrum.Palettes {
-		if strings.EqualFold(p.Name, *palette) {
+		if strings.EqualFold(p.Name, palette) {
 			pal = i
 		}
 	}
+	if pal < 0 {
+		return fmt.Errorf("unknown palette: %s", palette)
+	}
 	cfg.Channels = 2
-	if *mono {
+	if mono {
 		cfg.Channels = 1 // parec/arecord do the downmix
 	}
-	cap, err := audio.Start(context.Background(), cfg)
+	cap, err := audio.Start(ctx, cfg)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		return err
 	}
-	a := app{cap: cap, pal: pal, spec: spectrum.New(
-		spectrum.Bands(*bands), spectrum.Channels(cfg.Channels), spectrum.Rate(cfg.Rate), spectrum.Gain(*gain), spectrum.AutoGain(*autoGain), spectrum.WithLayout(layout),
-		spectrum.WithPalette(spectrum.Palettes[pal]))}
-	final, err := tea.NewProgram(a).Run()
+	interval := loop
+	if interval == 0 {
+		interval = 10 * time.Second
+	}
+	a := app{cap: cap, pal: pal, loop: loop, interval: interval, layouts: layouts, spec: spectrum.New(
+		spectrum.Bands(bands), spectrum.Channels(cfg.Channels), spectrum.Rate(cfg.Rate), spectrum.Gain(gain),
+		spectrum.AutoGain(autoGain), spectrum.WithPalette(spectrum.Palettes[pal]), spectrum.WithLayout(layout),
+		spectrum.WithPeakStyle(peaks))}
+	if loop != 0 { // start on a loop flavor instead of waiting for the first tick
+		a.apply(nextFlavor(flavor{pal, layout, peaks}, layouts))
+	}
+	final, err := tea.NewProgram(a, tea.WithContext(ctx)).Run()
 	cap.Stop()
 	for range cap.Blocks() {
 	}
 	if err == nil {
 		err = final.(app).err
 	}
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
+	return err
 }

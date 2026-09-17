@@ -226,10 +226,81 @@ func TestEveryPaletteDrawsInEveryLayout(t *testing.T) {
 			m := New(Channels(2), Bands(4), FFTSize(256), Size(16, 8), WithLayout(l), WithPalette(p))
 			for ch := range m.bars {
 				for b := range m.bars[ch] {
-					m.bars[ch][b], m.peaks[ch][b] = 0.5, 0.9
+					m.bars[ch][b], m.peaks[ch][b] = 0.5, 1.5 // a flying peak past the top
 				}
 			}
 			m.draw() // must not panic
 		}
+	}
+}
+
+func TestFlyingPeaksLaunchAndRearm(t *testing.T) {
+	m := New(Channels(1), Bands(8), FFTSize(256), Size(16, 8), PeakHold(1), FallSpeed(1), WithPeakStyle(Flying))
+	m, _ = m.Update(SamplesMsg{sine(256, 1000)})
+	loud := 0
+	for b, p := range m.peaks[0] {
+		if p > m.peaks[0][loud] {
+			loud = b
+		}
+	}
+	start := m.peaks[0][loud]
+	silence := make([]float32, 256)
+	flew, rearmed := false, false
+	for i := 0; i < 200 && !rearmed; i++ {
+		m, _ = m.Update(SamplesMsg{silence})
+		p := m.peaks[0][loud]
+		if p > 1 {
+			flew = true
+		}
+		if flew && p == 0 {
+			rearmed = true
+		}
+		if !flew && p < start {
+			t.Fatalf("block %d: flying peak fell to %v", i, p)
+		}
+		m.draw() // peaks above the frame must not panic
+	}
+	if !flew || !rearmed {
+		t.Fatalf("flew=%v rearmed=%v", flew, rearmed)
+	}
+	if m.PeakStyle() != Flying {
+		t.Fatal("PeakStyle getter")
+	}
+	if s, ok := ParsePeakStyle("none"); !ok || s != NoPeaks {
+		t.Fatal("ParsePeakStyle")
+	}
+}
+
+func TestBeatPeaksFlyOnADrop(t *testing.T) {
+	quiet := sine(256, 1000)
+	for i := range quiet {
+		quiet[i] *= 0.03
+	}
+	loud := sine(256, 1000)
+	silence := make([]float32, 256)
+	run := func(style PeakStyle) bool {
+		m := New(Channels(1), Bands(8), FFTSize(256), Size(16, 8), PeakHold(5), FallSpeed(0.05), WithPeakStyle(style))
+		for range 100 { // settle the running energy average on a quiet passage
+			m, _ = m.Update(SamplesMsg{quiet})
+		}
+		m, _ = m.Update(SamplesMsg{loud}) // the drop
+		for range 60 {
+			m, _ = m.Update(SamplesMsg{silence})
+			for _, p := range m.peaks[0] {
+				if p > 1 {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	if !run(Beat) {
+		t.Fatal("beat style: peaks did not fly after the drop")
+	}
+	if run(Falling) {
+		t.Fatal("falling style: peaks must never fly")
+	}
+	if s, ok := ParsePeakStyle("beat"); !ok || s != Beat {
+		t.Fatal("ParsePeakStyle beat")
 	}
 }

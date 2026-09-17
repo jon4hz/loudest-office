@@ -22,7 +22,10 @@ type Model struct {
 	gain, agc                      float64 // agc is the auto-gain offset in dB
 	autoGain                       bool
 	layout                         Layout
+	peakStyle                      PeakStyle
 	tick                           int // blocks seen, drives animated palettes
+	energyAvg                      float32
+	burst                          int // blocks left in which Beat peaks fly
 	fixedW, fixedH, w, h           int
 
 	window []float32
@@ -30,6 +33,7 @@ type Model struct {
 	bars   [][]float32
 	peaks  [][]float32
 	hold   [][]int
+	vel    [][]float32 // upward speed of flying peaks
 	frame  [][]color.RGBA
 }
 
@@ -75,6 +79,33 @@ func ParseLayout(name string) (Layout, bool) {
 
 func WithLayout(l Layout) Option { return func(m *Model) { m.layout = l } }
 
+// PeakStyle says what a peak marker does once its hold time is over.
+type PeakStyle int
+
+const (
+	Falling PeakStyle = iota // sinks back onto the bar
+	Flying                   // accelerates upwards, leaves the frame, then re-arms at the bar
+	Beat                     // falls, but flies for a moment when the energy jumps (a drop, a hit)
+	NoPeaks                  // not drawn
+)
+
+func (s PeakStyle) String() string { return [...]string{"fall", "fly", "beat", "none"}[s] }
+
+// ParsePeakStyle accepts the names printed by PeakStyle.String.
+func ParsePeakStyle(name string) (PeakStyle, bool) {
+	for s := Falling; s <= NoPeaks; s++ {
+		if s.String() == name {
+			return s, true
+		}
+	}
+	return Falling, false
+}
+
+func WithPeakStyle(s PeakStyle) Option { return func(m *Model) { m.peakStyle = s } }
+
+func (m *Model) SetPeakStyle(s PeakStyle) { m.peakStyle = s }
+func (m Model) PeakStyle() PeakStyle      { return m.peakStyle }
+
 func (m *Model) SetLayout(l Layout) { m.layout = l }
 func (m Model) Layout() Layout      { return m.layout }
 
@@ -102,10 +133,12 @@ func (m *Model) SetBands(n int) {
 	m.bars = make([][]float32, m.channels)
 	m.peaks = make([][]float32, m.channels)
 	m.hold = make([][]int, m.channels)
+	m.vel = make([][]float32, m.channels)
 	for ch := range m.bars {
 		m.bars[ch] = make([]float32, n)
 		m.peaks[ch] = make([]float32, n)
 		m.hold[ch] = make([]int, n)
+		m.vel[ch] = make([]float32, n)
 	}
 }
 
@@ -135,7 +168,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 	case SamplesMsg:
 		m.tick++
-		var loudest float32
+		var loudest, energy float32
 		for ch := 0; ch < m.channels && ch < len(msg); ch++ {
 			if len(msg[ch]) < m.fftSize {
 				continue
@@ -143,16 +176,33 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			lv := dsp.Levels(msg[ch], m.window, m.edges, m.gain+m.agc, -60)
 			for b, l := range lv {
 				loudest = max(loudest, l)
+				energy += l / float32(len(lv)*m.channels)
 				m.bars[ch][b] = max(l, m.bars[ch][b]-m.fall)
 				switch {
-				case m.bars[ch][b] >= m.peaks[ch][b]:
-					m.peaks[ch][b], m.hold[ch][b] = m.bars[ch][b], m.peakHold
+				case m.bars[ch][b] >= m.peaks[ch][b] || m.peaks[ch][b] > 1.2: // caught up, or flown out
+					m.peaks[ch][b], m.hold[ch][b], m.vel[ch][b] = m.bars[ch][b], m.peakHold, 0
 				case m.hold[ch][b] > 0:
 					m.hold[ch][b]--
+				case m.peakStyle == Flying || (m.peakStyle == Beat && m.burst > 0):
+					// ponytail: fixed launch acceleration, ~0.5 s from bar to top
+					m.vel[ch][b] += 0.004
+					m.peaks[ch][b] += m.vel[ch][b]
 				default:
 					m.peaks[ch][b] = max(m.bars[ch][b], m.peaks[ch][b]-m.peakFall)
 				}
 			}
+		}
+		if m.peakStyle == Beat {
+			// ponytail: fixed drop detector: energy 1.5x above a ~1 s average
+			// launches every peak for ~0.7 s. Tune here if it fires too often.
+			m.burst = max(m.burst-1, 0)
+			if m.energyAvg > 0.02 && energy > 1.5*m.energyAvg {
+				m.burst = 30
+				for ch := range m.hold {
+					clear(m.hold[ch]) // launch now, do not wait out the hold
+				}
+			}
+			m.energyAvg += (energy - m.energyAvg) * 0.03
 		}
 		if m.autoGain {
 			// ponytail: fixed attack/release in dB per block (~23 ms); make
@@ -224,7 +274,7 @@ func (m *Model) draw() {
 				if y < barH {
 					c = bar
 				}
-				if y == peakY && m.peaks[ch][b] > 0 && peak.A != 0 {
+				if y == peakY && m.peaks[ch][b] > 0 && peak.A != 0 && m.peakStyle != NoPeaks {
 					c = peak
 				}
 				if c.A == 0 {
