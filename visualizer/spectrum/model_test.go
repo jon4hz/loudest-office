@@ -70,3 +70,39 @@ func TestModelFollowsWindowSize(t *testing.T) {
 		t.Fatal("SetBands did not resize")
 	}
 }
+
+func TestAutoGain(t *testing.T) {
+	quiet := sine(256, 1000)
+	for i := range quiet {
+		quiet[i] *= 0.01 // -40 dBFS -> level 0.33 without gain
+	}
+	m := New(Channels(1), Bands(8), FFTSize(256), Size(16, 8), AutoGain(true))
+	for range 400 {
+		m, _ = m.Update(SamplesMsg{quiet})
+	}
+	if mx := maxLevel(m.bars[0]); mx < 0.6 {
+		t.Fatalf("auto gain never lifted a quiet signal: %v", mx)
+	}
+	for range 60 {
+		m, _ = m.Update(SamplesMsg{sine(256, 1000)}) // full scale: gain must back off fast
+	}
+	if m.agc > 0 {
+		t.Fatalf("gain still boosted at full scale: %v dB", m.agc)
+	}
+	silence := make([]float32, 256)
+	before := m.agc
+	for range 100 {
+		m, _ = m.Update(SamplesMsg{silence})
+	}
+	if m.agc != before {
+		t.Fatalf("gain moved during silence: %v -> %v", before, m.agc)
+	}
+}
+
+func maxLevel(v []float32) float32 {
+	var mx float32
+	for _, x := range v {
+		mx = max(mx, x)
+	}
+	return mx
+}

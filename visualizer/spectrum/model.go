@@ -19,7 +19,8 @@ type Model struct {
 	palette                        Palette
 	fall, peakFall                 float32
 	peakHold                       int
-	gain                           float64
+	gain, agc                      float64 // agc is the auto-gain offset in dB
+	autoGain                       bool
 	fixedW, fixedH, w, h           int
 
 	window []float32
@@ -42,6 +43,11 @@ func FallSpeed(perBlock float32) Option { return func(m *Model) { m.fall = perBl
 func PeakHold(blocks int) Option        { return func(m *Model) { m.peakHold = blocks } }
 func PeakFall(perBlock float32) Option  { return func(m *Model) { m.peakFall = perBlock } }
 func Gain(db float64) Option            { return func(m *Model) { m.gain = db } }
+
+// AutoGain adapts the gain so the loudest band sits near the top: it backs
+// off fast when a band clips and creeps up slowly while everything is low.
+// It freezes during silence so pauses do not amplify the noise floor.
+func AutoGain(on bool) Option { return func(m *Model) { m.autoGain = on } }
 
 // Size fixes the frame size in pixels instead of following the window.
 func Size(w, h int) Option { return func(m *Model) { m.fixedW, m.fixedH = w, h } }
@@ -99,12 +105,14 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.draw()
 		}
 	case SamplesMsg:
+		var loudest float32
 		for ch := 0; ch < m.channels && ch < len(msg); ch++ {
 			if len(msg[ch]) < m.fftSize {
 				continue
 			}
-			lv := dsp.Levels(msg[ch], m.window, m.edges, m.gain, -60)
+			lv := dsp.Levels(msg[ch], m.window, m.edges, m.gain+m.agc, -60)
 			for b, l := range lv {
+				loudest = max(loudest, l)
 				m.bars[ch][b] = max(l, m.bars[ch][b]-m.fall)
 				switch {
 				case m.bars[ch][b] >= m.peaks[ch][b]:
@@ -114,6 +122,16 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				default:
 					m.peaks[ch][b] = max(m.bars[ch][b], m.peaks[ch][b]-m.peakFall)
 				}
+			}
+		}
+		if m.autoGain {
+			// ponytail: fixed attack/release in dB per block (~23 ms); make
+			// them options if a track ever pumps visibly.
+			switch {
+			case loudest > 0.95:
+				m.agc = max(m.agc-1, -30)
+			case loudest > 0.05 && loudest < 0.6:
+				m.agc = min(m.agc+0.05, 40)
 			}
 		}
 		m.draw()
