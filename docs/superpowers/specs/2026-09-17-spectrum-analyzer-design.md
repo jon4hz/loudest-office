@@ -46,7 +46,8 @@ mode, automatic pattern cycling, mirrored or side-by-side channel layouts.
     Channels are stacked vertically and each gets an equal slice of rows.
     Bars are as wide as `frameWidth / bands` pixels with a one-pixel gap
     when the bar is at least three pixels wide.
-  - `View() tea.View` paints the frame with `▀` per cell: foreground is the
+  - `View() string` paints the frame with `▀` per cell (the CLI wraps it in
+    a `tea.View` with the alt screen on): foreground is the
     upper pixel, background the lower pixel, 24-bit color escapes.
   - `Palette` is `func(band, nBands, y, height int) (bar, peak color.RGBA,
     drawBar, drawPeak bool)` where y is the pixel row from the bottom.
