@@ -2,6 +2,7 @@
 //
 //	spectrum                       # default sink monitor, 32 bands, rainbow
 //	spectrum -bands 16 -palette tribar -gain 6
+//	spectrum -mono                 # one spectrum, channels mixed down
 //	spectrum -cmd arecord -device hw:0   # on the Pi
 //
 // Keys: q quit, c next palette, +/- bands.
@@ -80,6 +81,7 @@ func main() {
 	flag.IntVar(&cfg.Rate, "rate", 44100, "sample rate")
 	bands := flag.Int("bands", 32, "number of bands")
 	gain := flag.Float64("gain", 0, "gain in dB")
+	mono := flag.Bool("mono", false, "mix down to one spectrum")
 	names := make([]string, len(spectrum.Palettes))
 	for i, p := range spectrum.Palettes {
 		names[i] = p.Name
@@ -94,13 +96,16 @@ func main() {
 		}
 	}
 	cfg.Channels = 2
+	if *mono {
+		cfg.Channels = 1 // parec/arecord do the downmix
+	}
 	cap, err := audio.Start(context.Background(), cfg)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 	a := app{cap: cap, pal: pal, spec: spectrum.New(
-		spectrum.Bands(*bands), spectrum.Rate(cfg.Rate), spectrum.Gain(*gain),
+		spectrum.Bands(*bands), spectrum.Channels(cfg.Channels), spectrum.Rate(cfg.Rate), spectrum.Gain(*gain),
 		spectrum.WithPalette(spectrum.Palettes[pal]))}
 	final, err := tea.NewProgram(a).Run()
 	cap.Stop()
