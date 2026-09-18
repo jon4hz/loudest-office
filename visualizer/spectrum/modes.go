@@ -343,29 +343,55 @@ func (m *Model) stepParrot(energy float32) {
 	}
 }
 
-// drawParrot scales the current frame to fit, a character being one pixel
-// wide and two tall, in the palette's colour for the frame so the parrot
-// cycles through the palette like the real one cycles through the rainbow.
-// Punctuation, the light strokes of the art, is drawn dim.
-func (m *Model) drawParrot() {
-	art := parrotFrames[m.parrotFrame]
+// parrotMask scales every frame to the current size once, a character being
+// one pixel wide and two tall: 0 is background, 1 a stroke, 2 a light stroke
+// (punctuation) drawn dim. It is dropped on resize, so it never outlives the
+// frame it was built for.
+func (m *Model) parrotMask() [][][]uint8 {
+	if m.parrot != nil {
+		return m.parrot
+	}
 	s := min(float32(m.w)/50, float32(m.h)/36)
 	ox, oy := (float32(m.w)-50*s)/2, (float32(m.h)-36*s)/2
-	for y := range m.h {
-		ay := int((float32(y) - oy) / (2 * s))
-		if ay < 0 || ay >= len(art) {
-			continue
-		}
-		c := m.cellColour(m.parrotFrame*m.bands/len(parrotFrames), m.h-1-y, m.h)
-		for x := range m.w {
-			ax := int((float32(x) - ox) / s)
-			if ax < 0 || ax >= len(art[ay]) || art[ay][ax] == ' ' {
+	m.parrot = make([][][]uint8, len(parrotFrames))
+	for f, art := range parrotFrames {
+		mask := make([][]uint8, m.h)
+		for y := range mask {
+			mask[y] = make([]uint8, m.w)
+			ay := int((float32(y) - oy) / (2 * s))
+			if ay < 0 || ay >= len(art) {
 				continue
 			}
-			if strings.IndexByte(".,':;", art[ay][ax]) >= 0 {
-				m.frame[y][x] = dim(c, 0.5)
-			} else {
+			for x := range mask[y] {
+				ax := int((float32(x) - ox) / s)
+				switch {
+				case ax < 0 || ax >= len(art[ay]) || art[ay][ax] == ' ':
+				case strings.IndexByte(".,':;", art[ay][ax]) >= 0:
+					mask[y][x] = 2
+				default:
+					mask[y][x] = 1
+				}
+			}
+		}
+		m.parrot[f] = mask
+	}
+	return m.parrot
+}
+
+// drawParrot paints the current frame's mask in the palette's colour for the
+// frame so the parrot cycles through the palette like the real one cycles
+// through the rainbow.
+func (m *Model) drawParrot() {
+	mask := m.parrotMask()[m.parrotFrame]
+	for y, row := range mask {
+		c := m.cellColour(m.parrotFrame*m.bands/len(parrotFrames), m.h-1-y, m.h)
+		d := dim(c, 0.5)
+		for x, k := range row {
+			switch k {
+			case 1:
 				m.frame[y][x] = c
+			case 2:
+				m.frame[y][x] = d
 			}
 		}
 	}

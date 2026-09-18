@@ -730,3 +730,32 @@ func TestParrotDancesFasterWhenLoud(t *testing.T) {
 		t.Fatal("ParseMode parrot")
 	}
 }
+
+func TestParrotMaskFollowsResize(t *testing.T) {
+	m := New(Channels(1), Bands(8), FFTSize(256), Size(50, 36), WithMode(Parrot))
+	m.draw()
+	before := m.parrot
+	if before == nil || len(before) != len(parrotFrames) || len(before[0]) != 36 || len(before[0][0]) != 50 {
+		t.Fatalf("mask not built for 50x36: %v", before != nil)
+	}
+	m.draw()
+	if &m.parrot[0][0][0] != &before[0][0][0] {
+		t.Fatal("mask rebuilt without a resize")
+	}
+	lit := 0
+	for _, row := range m.frame {
+		for _, px := range row {
+			if px.A != 0 {
+				lit++
+			}
+		}
+	}
+	if lit == 0 {
+		t.Fatal("parrot drew nothing")
+	}
+	m.resize(100, 72)
+	m.draw()
+	if len(m.parrot[0]) != 72 || len(m.parrot[0][0]) != 100 {
+		t.Fatal("mask not rebuilt for the new size")
+	}
+}

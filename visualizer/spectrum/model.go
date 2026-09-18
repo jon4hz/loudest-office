@@ -47,8 +47,9 @@ type Model struct {
 	stars   []star
 	parts   []particle
 
-	parrotFrame int     // party parrot frame shown
-	parrotAcc   float32 // frame budget, one frame per whole unit
+	parrotFrame int         // party parrot frame shown
+	parrotAcc   float32     // frame budget, one frame per whole unit
+	parrot      [][][]uint8 // frames scaled to the current size, see parrotMask
 }
 
 // Option configures New.
@@ -170,6 +171,7 @@ func (m Model) Frame() [][]color.RGBA { return m.frame }
 func (m *Model) resize(w, h int) {
 	m.w, m.h = w, h
 	m.life = nil // stale grid would index past the new frame; feedLife reallocates
+	m.parrot = nil
 	m.frame = make([][]color.RGBA, h)
 	for y := range m.frame {
 		m.frame[y] = make([]color.RGBA, w)
