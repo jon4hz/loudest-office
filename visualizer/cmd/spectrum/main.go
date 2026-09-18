@@ -5,7 +5,7 @@
 //	spectrum -mono                 # one spectrum, channels mixed down
 //	spectrum -autogain             # loudest band always fills the display
 //	spectrum -layout mirror        # stacked (default), side, mirror or hmirror
-//	spectrum -mode fire            # bars (default) or fire
+//	spectrum -mode life            # bars (default), fire or life
 //	spectrum -trails               # bars fade out instead of vanishing
 //	spectrum -cmd arecord -device hw:0   # on the Pi
 //
@@ -34,19 +34,24 @@ type loopTick struct{ gen int } // gen guards against ticks from a loop that was
 
 // flavor is one look the auto loop can pick.
 type flavor struct {
-	pal   int
-	lay   spectrum.Layout
-	peaks spectrum.PeakStyle
-	mode  spectrum.Mode
+	pal    int
+	lay    spectrum.Layout
+	peaks  spectrum.PeakStyle
+	mode   spectrum.Mode
+	trails bool
 }
 
-// nextFlavor draws a random flavor, with the layout taken from layouts, that
-// differs from cur in at least one part.
-func nextFlavor(cur flavor, layouts []spectrum.Layout) flavor {
+// nextFlavor draws a random flavor, with the layout and mode taken from the
+// lists (a mode listed twice is twice as likely) and, for bars, trails on one
+// time in twenty, that differs from cur in at least one part. A palette that
+// hides the bars is never paired with hidden peaks: that would draw nothing.
+func nextFlavor(cur flavor, layouts []spectrum.Layout, modes []spectrum.Mode) flavor {
 	for {
 		f := flavor{rand.IntN(len(spectrum.Palettes)), layouts[rand.IntN(len(layouts))],
-			spectrum.PeakStyle(rand.IntN(int(spectrum.NoPeaks) + 1)), spectrum.Mode(rand.IntN(int(spectrum.Fire) + 1))}
-		if f != cur {
+			spectrum.PeakStyle(rand.IntN(int(spectrum.NoPeaks) + 1)), modes[rand.IntN(len(modes))], false}
+		f.trails = f.mode == spectrum.Bars && rand.IntN(20) == 0
+		bar, _ := spectrum.Palettes[f.pal].At(0, 1, 0, 1)
+		if f != cur && (bar.A != 0 || f.peaks != spectrum.NoPeaks) {
 			return f
 		}
 	}
@@ -59,6 +64,7 @@ type app struct {
 	loop     time.Duration // 0 = off
 	interval time.Duration
 	layouts  []spectrum.Layout // the auto loop picks from these
+	modes    []spectrum.Mode   // and from these, repeats weigh
 	gen      int
 	err      error
 }
@@ -69,10 +75,11 @@ func (a *app) apply(f flavor) {
 	a.spec.SetLayout(f.lay)
 	a.spec.SetPeakStyle(f.peaks)
 	a.spec.SetMode(f.mode)
+	a.spec.SetTrails(f.trails)
 }
 
 func (a app) flavor() flavor {
-	return flavor{a.pal, a.spec.Layout(), a.spec.PeakStyle(), a.spec.Mode()}
+	return flavor{a.pal, a.spec.Layout(), a.spec.PeakStyle(), a.spec.Mode(), a.spec.Trails()}
 }
 
 func (a app) tickLoop() tea.Cmd {
@@ -112,7 +119,7 @@ func (a app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "p":
 			a.spec.SetPeakStyle((a.spec.PeakStyle() + 1) % (spectrum.NoPeaks + 1))
 		case "m":
-			a.spec.SetMode((a.spec.Mode() + 1) % (spectrum.Fire + 1))
+			a.spec.SetMode((a.spec.Mode() + 1) % (spectrum.Life + 1))
 		case "t":
 			a.spec.SetTrails(!a.spec.Trails())
 		case "a":
@@ -122,7 +129,7 @@ func (a app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, nil
 			}
 			a.loop = a.interval
-			a.apply(nextFlavor(a.flavor(), a.layouts))
+			a.apply(nextFlavor(a.flavor(), a.layouts, a.modes))
 			return a, a.tickLoop()
 		case "+", "=":
 			a.spec.SetBands(min(64, a.spec.NumBands()+8))
@@ -134,7 +141,7 @@ func (a app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.loop == 0 || msg.gen != a.gen {
 			return a, nil
 		}
-		a.apply(nextFlavor(a.flavor(), a.layouts))
+		a.apply(nextFlavor(a.flavor(), a.layouts, a.modes))
 		return a, a.tickLoop()
 	case captureDone:
 		a.err = a.cap.Wait()
@@ -160,7 +167,7 @@ func main() {
 		gain                                        float64
 		mono, autoGain, trails                      bool
 		palette, layoutName, peaksName, loopLayouts string
-		modeName                                    string
+		modeName, loopModes                         string
 		loop                                        time.Duration
 	)
 	names := make([]string, len(spectrum.Palettes))
@@ -175,7 +182,7 @@ func main() {
 Keys: q quit, c/C next/previous palette, l next layout, p next peak style, m next mode, t toggle trails, a toggle auto loop, +/- bands.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return run(cmd.Context(), cfg, bands, gain, mono, autoGain, trails, palette, layoutName, peaksName, modeName, loopLayouts, loop)
+			return run(cmd.Context(), cfg, bands, gain, mono, autoGain, trails, palette, layoutName, peaksName, modeName, loopLayouts, loopModes, loop)
 		},
 	}
 	f := cmd.Flags()
@@ -189,16 +196,17 @@ Keys: q quit, c/C next/previous palette, l next layout, p next peak style, m nex
 	f.StringVar(&palette, "palette", "rainbow", "palette: "+strings.Join(names, ", "))
 	f.StringVar(&layoutName, "layout", "stacked", "channel layout: stacked, side, mirror or hmirror")
 	f.StringVar(&peaksName, "peaks", "fall", "peak style: fall, fly, beat or none")
-	f.StringVar(&modeName, "mode", "bars", "visualization: bars or fire")
+	f.StringVar(&modeName, "mode", "bars", "visualization: bars, fire or life")
 	f.BoolVar(&trails, "trails", false, "fade bars out instead of clearing them")
 	f.DurationVar(&loop, "loop", 0, "auto loop: pick a random palette/layout/peak style at this interval (0 = off; the a key toggles it at 10s)")
 	f.StringVar(&loopLayouts, "loop-layouts", "mirror,hmirror", "comma-separated layouts the auto loop picks from")
+	f.StringVar(&loopModes, "loop-modes", "bars,bars,bars,fire,life", "comma-separated modes the auto loop picks from; repeat one to make it likelier")
 	if err := fang.Execute(context.Background(), cmd); err != nil {
 		os.Exit(1)
 	}
 }
 
-func run(ctx context.Context, cfg audio.Config, bands int, gain float64, mono, autoGain, trails bool, palette, layoutName, peaksName, modeName, loopLayouts string, loop time.Duration) error {
+func run(ctx context.Context, cfg audio.Config, bands int, gain float64, mono, autoGain, trails bool, palette, layoutName, peaksName, modeName, loopLayouts, loopModes string, loop time.Duration) error {
 	layout, ok := spectrum.ParseLayout(layoutName)
 	if !ok {
 		return fmt.Errorf("unknown layout: %s", layoutName)
@@ -206,6 +214,14 @@ func run(ctx context.Context, cfg audio.Config, bands int, gain float64, mono, a
 	mode, ok := spectrum.ParseMode(modeName)
 	if !ok {
 		return fmt.Errorf("unknown mode: %s", modeName)
+	}
+	var modes []spectrum.Mode
+	for name := range strings.SplitSeq(loopModes, ",") {
+		m, ok := spectrum.ParseMode(strings.TrimSpace(name))
+		if !ok {
+			return fmt.Errorf("unknown mode in --loop-modes: %s", name)
+		}
+		modes = append(modes, m)
 	}
 	var layouts []spectrum.Layout
 	for name := range strings.SplitSeq(loopLayouts, ",") {
@@ -240,12 +256,12 @@ func run(ctx context.Context, cfg audio.Config, bands int, gain float64, mono, a
 	if interval == 0 {
 		interval = 10 * time.Second
 	}
-	a := app{cap: cap, pal: pal, loop: loop, interval: interval, layouts: layouts, spec: spectrum.New(
+	a := app{cap: cap, pal: pal, loop: loop, interval: interval, layouts: layouts, modes: modes, spec: spectrum.New(
 		spectrum.Bands(bands), spectrum.Channels(cfg.Channels), spectrum.Rate(cfg.Rate), spectrum.Gain(gain),
 		spectrum.AutoGain(autoGain), spectrum.WithPalette(spectrum.Palettes[pal]), spectrum.WithLayout(layout),
 		spectrum.WithPeakStyle(peaks), spectrum.WithMode(mode), spectrum.WithTrails(trails))}
 	if loop != 0 { // start on a loop flavor instead of waiting for the first tick
-		a.apply(nextFlavor(flavor{pal, layout, peaks, mode}, layouts))
+		a.apply(nextFlavor(flavor{pal, layout, peaks, mode, trails}, layouts, modes))
 	}
 	final, err := tea.NewProgram(a, tea.WithContext(ctx)).Run()
 	cap.Stop()

@@ -26,7 +26,7 @@ We will then use the HiFiBerry DAC output to feed the signal to the CB10 speaker
 ### Visualizer
 
 `visualizer/` holds the Go spectrum analyzer that will eventually feed the matrix panel.
-Try it locally: `cd visualizer && go run ./cmd/spectrum` (needs `parec`; keys: `q`, `c` palette, `+`/`-` bands).
+Try it locally: `cd visualizer && go run ./cmd/spectrum` (needs `parec`; keys: `q`, `c` palette, `m` mode, `t` trails, `+`/`-` bands).
 
 ## Configuring the Pi
 

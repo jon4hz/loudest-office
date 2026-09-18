@@ -453,3 +453,78 @@ func TestTrailsFadeInsteadOfClearing(t *testing.T) {
 		t.Fatal("trails off: pixel should be cleared")
 	}
 }
+
+func TestLifeBlinkerRotates(t *testing.T) {
+	m := New(Channels(1), Bands(1), FFTSize(256), Size(5, 5), WithMode(Life))
+	m.stepLife()                                                // allocates the grid
+	m.life[2][1], m.life[2][2], m.life[2][3] = true, true, true // horizontal blinker
+	m.stepLife()
+	for y := range 5 {
+		for x := range 5 {
+			want := x == 2 && y >= 1 && y <= 3 // vertical now
+			if m.life[y][x] != want {
+				t.Fatalf("cell %d,%d alive=%v", x, y, m.life[y][x])
+			}
+		}
+	}
+	m.stepLife()
+	if !m.life[2][1] || !m.life[2][3] || m.life[1][2] {
+		t.Fatal("blinker did not rotate back")
+	}
+}
+
+func TestLifeWrapsAtTheEdges(t *testing.T) {
+	m := New(Channels(1), Bands(1), FFTSize(256), Size(5, 5), WithMode(Life))
+	m.stepLife()
+	m.life[0][0], m.life[0][1], m.life[0][4] = true, true, true // a blinker across the left edge
+	m.stepLife()
+	if !m.life[4][0] || !m.life[1][0] || !m.life[0][0] {
+		t.Fatal("blinker across the seam did not become vertical")
+	}
+}
+
+func TestLifeIsSeededByTheSpectrum(t *testing.T) {
+	// 4 bands, 16 columns: 2.15 kHz is band 2, columns 8..11.
+	m := New(Channels(1), Bands(4), FFTSize(1024), Size(16, 8), WithMode(Life))
+	loudSeen := false
+	for range 40 {
+		m, _ = m.Update(SamplesMsg{sine(1024, 2150)})
+		for x := 0; x < 16; x++ {
+			if m.Frame()[7][x].A != 0 && x >= 8 && x < 12 {
+				loudSeen = true
+			}
+		}
+	}
+	if !loudSeen {
+		t.Fatal("the loud band never seeded its columns")
+	}
+	m = New(Channels(1), Bands(4), FFTSize(1024), Size(16, 8), WithMode(Life))
+	silence := make([]float32, 1024)
+	for range 40 {
+		m, _ = m.Update(SamplesMsg{silence})
+		for y, row := range m.Frame() {
+			for x, px := range row {
+				if px.A != 0 {
+					t.Fatalf("silence seeded a cell at %d,%d", x, y)
+				}
+			}
+		}
+	}
+	m.SetBands(8)
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 3, Height: 1}) // resize must not panic
+	m, _ = m.Update(SamplesMsg{silence})
+	if mode, ok := ParseMode("life"); !ok || mode != Life {
+		t.Fatal("ParseMode life")
+	}
+}
+
+func TestLifeUsesPeakColourWhenBarsAreHidden(t *testing.T) {
+	p, _ := PaletteByName("peaks") // bars hidden, peaks blue
+	m := New(Channels(1), Bands(1), FFTSize(256), Size(3, 3), WithMode(Life), WithPalette(p))
+	m.stepLife()
+	m.life[1][1] = true
+	m.draw()
+	if m.Frame()[1][1] != blue {
+		t.Fatalf("cell should take the peak colour, got %v", m.Frame()[1][1])
+	}
+}

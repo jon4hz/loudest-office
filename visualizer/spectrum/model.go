@@ -32,16 +32,18 @@ type Model struct {
 	burst                          int // blocks left in which Beat peaks fly
 	fixedW, fixedH, w, h           int
 
-	window []float32
-	edges  []int
-	bars   [][]float32
-	peaks  [][]float32
-	hold   [][]int
-	vel    [][]float32 // vertical speed of flying peaks (negative = down)
-	vx, px [][]float32 // sideways speed and offset of chaotic peaks, in bands
-	frame  [][]color.RGBA
-	mix    []float32   // channel-mixed levels of the last block, feeds the fire
-	heat   [][]float32 // fire heat per frame row plus the source row at the bottom
+	window  []float32
+	edges   []int
+	bars    [][]float32
+	peaks   [][]float32
+	hold    [][]int
+	vel     [][]float32 // vertical speed of flying peaks (negative = down)
+	vx, px  [][]float32 // sideways speed and offset of chaotic peaks, in bands
+	frame   [][]color.RGBA
+	mix     []float32   // channel-mixed levels of the last block, feeds the fire
+	heat    [][]float32 // fire heat per frame row plus the source row at the bottom
+	life    [][]bool    // game of life cells
+	lifeAcc float32     // generation budget, one generation per whole unit
 }
 
 // Option configures New.
@@ -232,8 +234,11 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			}
 			m.energyAvg += (energy - m.energyAvg) * 0.015
 		}
-		if m.mode == Fire {
+		switch m.mode {
+		case Fire:
 			m.stepFire()
+		case Life:
+			m.feedLife(energy)
 		}
 		if m.autoGain {
 			// ponytail: fixed attack/release in dB per block (~23 ms); make
@@ -267,8 +272,12 @@ func (m *Model) draw() {
 	if m.w == 0 || m.h == 0 || m.bands == 0 {
 		return
 	}
-	if m.mode == Fire {
+	switch m.mode {
+	case Fire:
 		m.drawFire()
+		return
+	case Life:
+		m.drawLife()
 		return
 	}
 	cols, rows := 1, m.channels
