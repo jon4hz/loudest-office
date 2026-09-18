@@ -363,3 +363,93 @@ func TestPeakNeverDrawnInsideABar(t *testing.T) {
 		t.Fatal("peak above the bar should be drawn")
 	}
 }
+
+func TestParseModeRoundTrips(t *testing.T) {
+	for mode := Bars; mode <= Fire; mode++ {
+		if got, ok := ParseMode(mode.String()); !ok || got != mode {
+			t.Fatalf("%v: got %v ok=%v", mode, got, ok)
+		}
+	}
+	if _, ok := ParseMode("nope"); ok {
+		t.Fatal("unknown mode parsed")
+	}
+	m := New(WithMode(Fire))
+	if m.Mode() != Fire {
+		t.Fatal("WithMode")
+	}
+	m.SetMode(Bars)
+	if m.Mode() != Bars {
+		t.Fatal("SetMode")
+	}
+}
+
+// column returns the lit rows of column x as a string, top to bottom.
+func column(m Model, x int) string {
+	s := make([]byte, len(m.Frame()))
+	for y, row := range m.Frame() {
+		s[y] = '.'
+		if row[x].A != 0 {
+			s[y] = '#'
+		}
+	}
+	return string(s)
+}
+
+func TestFireSeedsFromTheBandsAndClimbs(t *testing.T) {
+	m := New(Channels(1), Bands(1), FFTSize(256), Size(4, 8), WithMode(Fire))
+	loud := sine(256, 1000)
+	top, bottom := false, false
+	for range 30 {
+		m, _ = m.Update(SamplesMsg{loud})
+		bottom = bottom || strings.Contains(column(m, 1), "#")
+		top = top || m.Frame()[0][0].A != 0 || m.Frame()[0][1].A != 0 || m.Frame()[0][2].A != 0 || m.Frame()[0][3].A != 0
+	}
+	if !bottom || m.Frame()[7][1].A == 0 {
+		t.Fatal("bottom row not burning")
+	}
+	if !top {
+		t.Fatal("a full-level band never reached the top")
+	}
+	silence := make([]float32, 256)
+	for range 40 {
+		m, _ = m.Update(SamplesMsg{silence})
+	}
+	for y := range m.Frame() {
+		if strings.Contains(column(m, 1), "#") {
+			t.Fatalf("row %d still burning after silence", y)
+		}
+	}
+	m.SetBands(8)
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 3, Height: 2}) // resize must not panic
+	m, _ = m.Update(SamplesMsg{loud})
+}
+
+func TestTrailsFadeInsteadOfClearing(t *testing.T) {
+	p, _ := PaletteByName("white")
+	m := New(Channels(1), Bands(1), FFTSize(256), Size(1, 4), WithPalette(p), WithTrails(true), WithPeakStyle(NoPeaks))
+	if !m.Trails() {
+		t.Fatal("WithTrails")
+	}
+	m.bars[0][0] = 1
+	m.draw()
+	m.bars[0][0] = 0
+	m.draw()
+	px := m.Frame()[0][0]
+	if px.A == 0 || px.R == 255 {
+		t.Fatalf("pixel should be dimmed, not cleared: %v", px)
+	}
+	for range 100 {
+		m.draw()
+	}
+	if m.Frame()[0][0].A != 0 {
+		t.Fatal("trail never died")
+	}
+	m.SetTrails(false)
+	m.bars[0][0] = 1
+	m.draw()
+	m.bars[0][0] = 0
+	m.draw()
+	if m.Frame()[0][0].A != 0 {
+		t.Fatal("trails off: pixel should be cleared")
+	}
+}

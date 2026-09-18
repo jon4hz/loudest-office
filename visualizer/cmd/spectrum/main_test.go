@@ -7,14 +7,14 @@ import (
 )
 
 func TestNextFlavorNeverRepeats(t *testing.T) {
-	cur := flavor{0, spectrum.Stacked, spectrum.Falling}
+	cur := flavor{0, spectrum.Stacked, spectrum.Falling, spectrum.Bars}
 	allowed := []spectrum.Layout{spectrum.Mirrored, spectrum.HMirrored}
 	for range 500 {
 		f := nextFlavor(cur, allowed)
 		if f == cur {
 			t.Fatal("picked the current flavor")
 		}
-		if f.pal >= len(spectrum.Palettes) || f.peaks > spectrum.NoPeaks {
+		if f.pal >= len(spectrum.Palettes) || f.peaks > spectrum.NoPeaks || f.mode > spectrum.Fire {
 			t.Fatalf("out of range: %+v", f)
 		}
 		if f.lay != spectrum.Mirrored && f.lay != spectrum.HMirrored {

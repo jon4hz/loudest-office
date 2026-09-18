@@ -25,6 +25,8 @@ type Model struct {
 	autoGain                       bool
 	layout                         Layout
 	peakStyle                      PeakStyle
+	mode                           Mode
+	trails                         bool
 	tick                           int // blocks seen, drives animated palettes
 	energyAvg                      float32
 	burst                          int // blocks left in which Beat peaks fly
@@ -38,6 +40,8 @@ type Model struct {
 	vel    [][]float32 // vertical speed of flying peaks (negative = down)
 	vx, px [][]float32 // sideways speed and offset of chaotic peaks, in bands
 	frame  [][]color.RGBA
+	mix    []float32   // channel-mixed levels of the last block, feeds the fire
+	heat   [][]float32 // fire heat per frame row plus the source row at the bottom
 }
 
 // Option configures New.
@@ -139,6 +143,7 @@ func (m *Model) SetBands(n int) {
 	m.vel = make([][]float32, m.channels)
 	m.vx = make([][]float32, m.channels)
 	m.px = make([][]float32, m.channels)
+	m.mix = make([]float32, n)
 	for ch := range m.bars {
 		m.bars[ch] = make([]float32, n)
 		m.peaks[ch] = make([]float32, n)
@@ -175,6 +180,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 	case SamplesMsg:
 		m.tick++
+		clear(m.mix)
 		var loudest, energy float32
 		for ch := 0; ch < m.channels && ch < len(msg); ch++ {
 			if len(msg[ch]) < m.fftSize {
@@ -184,6 +190,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			for b, l := range lv {
 				loudest = max(loudest, l)
 				energy += l / float32(len(lv)*m.channels)
+				m.mix[b] += l / float32(m.channels)
 				m.bars[ch][b] = max(l, m.bars[ch][b]-m.fall)
 				p := &m.peaks[ch][b]
 				switch {
@@ -225,6 +232,9 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			}
 			m.energyAvg += (energy - m.energyAvg) * 0.015
 		}
+		if m.mode == Fire {
+			m.stepFire()
+		}
 		if m.autoGain {
 			// ponytail: fixed attack/release in dB per block (~23 ms); make
 			// them options if a track ever pumps visibly.
@@ -240,12 +250,25 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	return m, nil
 }
 
-// draw paints bars and peaks of every channel into the frame.
+// draw paints the current mode into the frame.
 func (m *Model) draw() {
 	for _, row := range m.frame {
-		clear(row)
+		if !m.trails {
+			clear(row)
+			continue
+		}
+		for x, px := range row { // ponytail: fixed fade of 20% per frame
+			row[x] = color.RGBA{uint8(float32(px.R) * 0.8), uint8(float32(px.G) * 0.8), uint8(float32(px.B) * 0.8), 255}
+			if row[x].R|row[x].G|row[x].B == 0 {
+				row[x] = color.RGBA{}
+			}
+		}
 	}
 	if m.w == 0 || m.h == 0 || m.bands == 0 {
+		return
+	}
+	if m.mode == Fire {
+		m.drawFire()
 		return
 	}
 	cols, rows := 1, m.channels
