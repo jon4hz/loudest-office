@@ -5,7 +5,7 @@
 //	spectrum -mono                 # one spectrum, channels mixed down
 //	spectrum -autogain             # loudest band always fills the display
 //	spectrum -layout mirror        # stacked (default), side, mirror or hmirror
-//	spectrum -mode life            # bars (default), fire or life
+//	spectrum -mode life            # bars (default), fire, life, stars or fireworks
 //	spectrum -trails               # bars fade out instead of vanishing
 //	spectrum -cmd arecord -device hw:0   # on the Pi
 //
@@ -119,7 +119,7 @@ func (a app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "p":
 			a.spec.SetPeakStyle((a.spec.PeakStyle() + 1) % (spectrum.NoPeaks + 1))
 		case "m":
-			a.spec.SetMode((a.spec.Mode() + 1) % (spectrum.Life + 1))
+			a.spec.SetMode((a.spec.Mode() + 1) % (spectrum.Fireworks + 1))
 		case "t":
 			a.spec.SetTrails(!a.spec.Trails())
 		case "a":
@@ -196,11 +196,11 @@ Keys: q quit, c/C next/previous palette, l next layout, p next peak style, m nex
 	f.StringVar(&palette, "palette", "rainbow", "palette: "+strings.Join(names, ", "))
 	f.StringVar(&layoutName, "layout", "stacked", "channel layout: stacked, side, mirror or hmirror")
 	f.StringVar(&peaksName, "peaks", "fall", "peak style: fall, fly, beat or none")
-	f.StringVar(&modeName, "mode", "bars", "visualization: bars, fire or life")
+	f.StringVar(&modeName, "mode", "bars", "visualization: bars, fire, life, stars or fireworks")
 	f.BoolVar(&trails, "trails", false, "fade bars out instead of clearing them")
 	f.DurationVar(&loop, "loop", 0, "auto loop: pick a random palette/layout/peak style at this interval (0 = off; the a key toggles it at 10s)")
 	f.StringVar(&loopLayouts, "loop-layouts", "mirror,hmirror", "comma-separated layouts the auto loop picks from")
-	f.StringVar(&loopModes, "loop-modes", "bars,bars,bars,fire,life", "comma-separated modes the auto loop picks from; repeat one to make it likelier")
+	f.StringVar(&loopModes, "loop-modes", "bars,bars,bars,fire,life,stars,fireworks", "comma-separated modes the auto loop picks from; repeat one to make it likelier")
 	if err := fang.Execute(context.Background(), cmd); err != nil {
 		os.Exit(1)
 	}

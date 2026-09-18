@@ -44,6 +44,8 @@ type Model struct {
 	heat    [][]float32 // fire heat per frame row plus the source row at the bottom
 	life    [][]bool    // game of life cells
 	lifeAcc float32     // generation budget, one generation per whole unit
+	stars   []star
+	parts   []particle
 }
 
 // Option configures New.
@@ -214,31 +216,35 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				}
 			}
 		}
-		if m.peakStyle == Beat {
-			// ponytail: fixed drop detector: energy 1.5x above a ~2 s average
-			// launches every peak for ~0.7 s, 1.7x scatters them. A running
-			// burst is never re-triggered, so the flight stays clean.
-			m.burst = max(m.burst-1, 0)
-			if m.burst == 0 && m.energyAvg > 0.02 && energy > 1.5*m.energyAvg {
-				m.burst = 30
-				chaos := energy > 1.7*m.energyAvg // a big drop: scatter the peaks
-				for ch := range m.hold {
-					clear(m.hold[ch]) // launch now, do not wait out the hold
-					for b := range m.hold[ch] {
-						if chaos {
-							m.vel[ch][b] = rand.Float32()*0.08 - 0.03 // some up, some down
-							m.vx[ch][b] = rand.Float32()*0.3 - 0.15   // drift sideways
-						}
+		// ponytail: fixed drop detector: energy 1.5x above a ~2 s average
+		// starts a ~0.7 s burst, 1.7x is a big drop. A running burst is never
+		// re-triggered, so whatever it drives stays clean.
+		m.burst = max(m.burst-1, 0)
+		dropped, big := false, false
+		if m.burst == 0 && m.energyAvg > 0.02 && energy > 1.5*m.energyAvg {
+			m.burst, dropped, big = 30, true, energy > 1.7*m.energyAvg
+		}
+		m.energyAvg += (energy - m.energyAvg) * 0.015
+		if m.peakStyle == Beat && dropped { // Beat peaks fly for the burst, a big drop scatters them
+			for ch := range m.hold {
+				clear(m.hold[ch]) // launch now, do not wait out the hold
+				for b := range m.hold[ch] {
+					if big {
+						m.vel[ch][b] = rand.Float32()*0.08 - 0.03 // some up, some down
+						m.vx[ch][b] = rand.Float32()*0.3 - 0.15   // drift sideways
 					}
 				}
 			}
-			m.energyAvg += (energy - m.energyAvg) * 0.015
 		}
 		switch m.mode {
 		case Fire:
 			m.stepFire()
 		case Life:
 			m.feedLife(energy)
+		case Starfield:
+			m.stepStars(energy)
+		case Fireworks:
+			m.stepFireworks(dropped)
 		}
 		if m.autoGain {
 			// ponytail: fixed attack/release in dB per block (~23 ms); make
@@ -278,6 +284,12 @@ func (m *Model) draw() {
 		return
 	case Life:
 		m.drawLife()
+		return
+	case Starfield:
+		m.drawStars()
+		return
+	case Fireworks:
+		m.drawFireworks()
 		return
 	}
 	cols, rows := 1, m.channels

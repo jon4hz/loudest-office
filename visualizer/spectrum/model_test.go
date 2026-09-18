@@ -528,3 +528,146 @@ func TestLifeUsesPeakColourWhenBarsAreHidden(t *testing.T) {
 		t.Fatalf("cell should take the peak colour, got %v", m.Frame()[1][1])
 	}
 }
+
+// drop returns a model of the given mode right after a detected drop.
+func drop(mode Mode) Model {
+	quiet := sine(256, 1000)
+	for i := range quiet {
+		quiet[i] *= 0.32
+	}
+	m := New(Channels(1), Bands(8), FFTSize(256), Size(16, 8), WithMode(mode))
+	for range 300 {
+		m, _ = m.Update(SamplesMsg{quiet})
+	}
+	m, _ = m.Update(SamplesMsg{sine(256, 1000)})
+	return m
+}
+
+func TestDropDetectorRunsInEveryMode(t *testing.T) {
+	if m := drop(Starfield); m.burst == 0 {
+		t.Fatal("starfield: drop not detected")
+	}
+	if m := drop(Fireworks); m.burst == 0 {
+		t.Fatal("fireworks: drop not detected")
+	}
+}
+
+func TestStarsFlyFasterWithEnergyAndWarpOnADrop(t *testing.T) {
+	m := New(Channels(1), Bands(8), FFTSize(256), Size(16, 8), WithMode(Starfield))
+	silence := make([]float32, 256)
+	m, _ = m.Update(SamplesMsg{silence})
+	if len(m.stars) == 0 {
+		t.Fatal("no stars")
+	}
+	lit := 0
+	for _, row := range m.Frame() {
+		for _, px := range row {
+			if px.A != 0 {
+				lit++
+			}
+		}
+	}
+	if lit == 0 {
+		t.Fatal("no star drawn")
+	}
+	speed := func(m *Model, block []float32) float32 {
+		z := m.stars[0].z
+		*m, _ = m.Update(SamplesMsg{block})
+		if m.stars[0].z > z {
+			return 0 // respawned, no measurement
+		}
+		return z - m.stars[0].z
+	}
+	var slow, fast float32
+	for slow == 0 {
+		slow = speed(&m, silence)
+	}
+	for fast == 0 {
+		fast = speed(&m, sine(256, 1000))
+	}
+	if fast <= slow {
+		t.Fatalf("loud block should move stars faster: %v vs %v", fast, slow)
+	}
+	w := drop(Starfield)
+	if w.burst == 0 || w.warp() == 0 {
+		t.Fatal("drop should start a warp")
+	}
+	m.SetBands(4)
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 3, Height: 1}) // resize must not panic
+	m, _ = m.Update(SamplesMsg{silence})
+	if mode, ok := ParseMode("stars"); !ok || mode != Starfield {
+		t.Fatal("ParseMode stars")
+	}
+}
+
+func TestFireworksLaunchFromLoudBandsAndBurst(t *testing.T) {
+	// 4 bands: 2.15 kHz is band 2 and the only band with a level.
+	m := New(Channels(1), Bands(4), FFTSize(1024), Size(16, 16), WithMode(Fireworks))
+	for range 300 { // settle the drop detector: the onset itself counts as a drop
+		m, _ = m.Update(SamplesMsg{sine(1024, 2150)})
+	}
+	m.parts = nil
+	for range 100 {
+		m, _ = m.Update(SamplesMsg{sine(1024, 2150)})
+	}
+	if len(m.parts) == 0 {
+		t.Fatal("no rockets launched")
+	}
+	for _, p := range m.parts {
+		if p.band != 2 {
+			t.Fatalf("particle from silent band %d", p.band)
+		}
+	}
+	silence := make([]float32, 1024)
+	sparks := 0
+	for i := 0; i < 400 && len(m.parts) > 0; i++ {
+		m, _ = m.Update(SamplesMsg{silence})
+		for _, p := range m.parts {
+			if !p.rocket {
+				sparks++
+			}
+		}
+	}
+	if sparks == 0 {
+		t.Fatal("no rocket ever burst into sparks")
+	}
+	if len(m.parts) != 0 {
+		t.Fatalf("%d particles never died", len(m.parts))
+	}
+	for range 40 {
+		m, _ = m.Update(SamplesMsg{silence})
+		if len(m.parts) != 0 {
+			t.Fatal("silence launched a rocket")
+		}
+	}
+}
+
+func TestFireworksVolleyOnADrop(t *testing.T) {
+	d := drop(Fireworks)
+	rockets := 0
+	for _, p := range d.parts {
+		if p.rocket {
+			rockets++
+		}
+	}
+	if rockets < 3 {
+		t.Fatalf("drop should fire a volley, got %d rockets", rockets)
+	}
+	lit := 0
+	for _, row := range d.Frame() {
+		for _, px := range row {
+			if px.A != 0 {
+				lit++
+			}
+		}
+	}
+	if lit <= rockets {
+		t.Fatal("rockets should draw a tail below the head")
+	}
+	d.SetBands(2)
+	d, _ = d.Update(tea.WindowSizeMsg{Width: 3, Height: 1}) // resize must not panic
+	d, _ = d.Update(SamplesMsg{make([]float32, 256)})
+	if mode, ok := ParseMode("fireworks"); !ok || mode != Fireworks {
+		t.Fatal("ParseMode fireworks")
+	}
+}
