@@ -1,9 +1,11 @@
 package spectrum
 
 import (
+	"embed"
 	"image/color"
 	"math"
 	"math/rand/v2"
+	"strings"
 )
 
 // Mode says what the frame shows.
@@ -15,13 +17,16 @@ const (
 	Life                  // Conway's game of life, cells born on the bottom row where the bands are loud
 	Starfield             // stars flying at the viewer, faster with energy, a drop is a hyperspace jump
 	Fireworks             // bands launch rockets, loud bands higher, that burst into sparks; a drop fires a volley
+	Parrot                // party parrot, dancing as fast as the music is loud
 )
 
-func (m Mode) String() string { return [...]string{"bars", "fire", "life", "stars", "fireworks"}[m] }
+func (m Mode) String() string {
+	return [...]string{"bars", "fire", "life", "stars", "fireworks", "parrot"}[m]
+}
 
 // ParseMode accepts the names printed by Mode.String.
 func ParseMode(name string) (Mode, bool) {
-	for m := Bars; m <= Fireworks; m++ {
+	for m := Bars; m <= Parrot; m++ {
 		if m.String() == name {
 			return m, true
 		}
@@ -302,6 +307,66 @@ func (m *Model) drawFireworks() {
 		m.frame[m.h-1-y][x] = c
 		for t := 1; t <= int(p.vy/rocketSpeed*8) && y-t >= 0; t++ {
 			m.frame[m.h-1-(y-t)][x] = dim(c, 0.4)
+		}
+	}
+}
+
+// parrotFS holds the party parrot frames, 50x18 characters each, from
+// github.com/caarlos0/parttysh (MIT, see parrot/LICENSE).
+//
+//go:embed parrot/*.txt
+var parrotFS embed.FS
+
+// parrotFrames are the frames in order, each a slice of rows.
+var parrotFrames = func() [][]string {
+	entries, _ := parrotFS.ReadDir("parrot")
+	var frames [][]string
+	for _, e := range entries {
+		if !strings.HasSuffix(e.Name(), ".txt") {
+			continue
+		}
+		b, _ := parrotFS.ReadFile("parrot/" + e.Name())
+		frames = append(frames, strings.Split(strings.TrimRight(string(b), "\n"), "\n"))
+	}
+	return frames
+}()
+
+// stepParrot advances the animation on an energy budget: the louder the
+// music, the faster the parrot dances.
+func (m *Model) stepParrot(energy float32) {
+	// ponytail: fixed rate of ~2 frames/s in silence up to ~28 at full energy
+	// (parttysh runs at 15). Make it an option if the panel wants it calmer.
+	m.parrotAcc += 0.05 + 0.6*energy
+	for m.parrotAcc >= 1 {
+		m.parrotAcc--
+		m.parrotFrame = (m.parrotFrame + 1) % len(parrotFrames)
+	}
+}
+
+// drawParrot scales the current frame to fit, a character being one pixel
+// wide and two tall, in the palette's colour for the frame so the parrot
+// cycles through the palette like the real one cycles through the rainbow.
+// Punctuation, the light strokes of the art, is drawn dim.
+func (m *Model) drawParrot() {
+	art := parrotFrames[m.parrotFrame]
+	s := min(float32(m.w)/50, float32(m.h)/36)
+	ox, oy := (float32(m.w)-50*s)/2, (float32(m.h)-36*s)/2
+	for y := range m.h {
+		ay := int((float32(y) - oy) / (2 * s))
+		if ay < 0 || ay >= len(art) {
+			continue
+		}
+		c := m.cellColour(m.parrotFrame*m.bands/len(parrotFrames), m.h-1-y, m.h)
+		for x := range m.w {
+			ax := int((float32(x) - ox) / s)
+			if ax < 0 || ax >= len(art[ay]) || art[ay][ax] == ' ' {
+				continue
+			}
+			if strings.IndexByte(".,':;", art[ay][ax]) >= 0 {
+				m.frame[y][x] = dim(c, 0.5)
+			} else {
+				m.frame[y][x] = c
+			}
 		}
 	}
 }

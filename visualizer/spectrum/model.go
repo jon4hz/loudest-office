@@ -46,6 +46,9 @@ type Model struct {
 	lifeAcc float32     // generation budget, one generation per whole unit
 	stars   []star
 	parts   []particle
+
+	parrotFrame int     // party parrot frame shown
+	parrotAcc   float32 // frame budget, one frame per whole unit
 }
 
 // Option configures New.
@@ -166,6 +169,7 @@ func (m Model) Frame() [][]color.RGBA { return m.frame }
 
 func (m *Model) resize(w, h int) {
 	m.w, m.h = w, h
+	m.life = nil // stale grid would index past the new frame; feedLife reallocates
 	m.frame = make([][]color.RGBA, h)
 	for y := range m.frame {
 		m.frame[y] = make([]color.RGBA, w)
@@ -245,6 +249,8 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.stepStars(energy)
 		case Fireworks:
 			m.stepFireworks(dropped)
+		case Parrot:
+			m.stepParrot(energy)
 		}
 		if m.autoGain {
 			// ponytail: fixed attack/release in dB per block (~23 ms); make
@@ -290,6 +296,9 @@ func (m *Model) draw() {
 		return
 	case Fireworks:
 		m.drawFireworks()
+		return
+	case Parrot:
+		m.drawParrot()
 		return
 	}
 	cols, rows := 1, m.channels

@@ -671,3 +671,62 @@ func TestFireworksVolleyOnADrop(t *testing.T) {
 		t.Fatal("ParseMode fireworks")
 	}
 }
+
+func TestLifeSurvivesShrinkingResize(t *testing.T) {
+	m := New(WithMode(Life))
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 40, Height: 10})
+	m, _ = m.Update(SamplesMsg{sine(m.fftSize, 440), sine(m.fftSize, 440)})
+	m.life[m.h-1][m.w-1] = true                              // a cell in the far corner of the old grid
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 20, Height: 5}) // must not panic
+	m, _ = m.Update(SamplesMsg{sine(m.fftSize, 440), sine(m.fftSize, 440)})
+	if len(m.life) != 10 || len(m.life[0]) != 20 {
+		t.Fatalf("life grid %dx%d after resize", len(m.life[0]), len(m.life))
+	}
+}
+
+func TestParrotDancesFasterWhenLoud(t *testing.T) {
+	if len(parrotFrames) != 10 {
+		t.Fatalf("%d parrot frames embedded", len(parrotFrames))
+	}
+	m := New(Channels(1), Bands(8), FFTSize(256), Size(50, 36), WithMode(Parrot))
+	silence := make([]float32, 256)
+	advance := func(block []float32) int {
+		n := 0
+		for range 40 {
+			before := m.parrotFrame
+			m, _ = m.Update(SamplesMsg{block})
+			n += (m.parrotFrame - before + len(parrotFrames)) % len(parrotFrames)
+		}
+		return n
+	}
+	slow := advance(silence)
+	fast := advance(sine(256, 1000))
+	if slow == 0 || fast <= slow {
+		t.Fatalf("loud blocks should dance faster: %d vs %d frames", fast, slow)
+	}
+	lit, dimmed := 0, 0
+	for _, row := range m.Frame() {
+		for _, px := range row {
+			if px.A != 0 {
+				lit++
+			}
+		}
+	}
+	art := parrotFrames[m.parrotFrame]
+	for _, line := range art {
+		for _, ch := range line {
+			if ch != ' ' {
+				dimmed++
+			}
+		}
+	}
+	if lit != 2*dimmed { // at native size every character is exactly two pixels
+		t.Fatalf("%d pixels lit for %d characters", lit, dimmed)
+	}
+	m.SetBands(4)
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 3, Height: 1}) // resize must not panic
+	m, _ = m.Update(SamplesMsg{silence})
+	if mode, ok := ParseMode("parrot"); !ok || mode != Parrot {
+		t.Fatal("ParseMode parrot")
+	}
+}
