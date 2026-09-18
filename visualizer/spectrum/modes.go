@@ -173,7 +173,8 @@ func (m Model) warp() int {
 }
 
 // stepStars flies the stars at the viewer at a speed that follows the energy,
-// four times faster in warp, and respawns the ones that passed by.
+// surging on every beat once the tempo is known, four times faster in warp,
+// and respawns the ones that passed by.
 func (m *Model) stepStars(energy float32) {
 	if n := max(20, m.w*m.h/16); len(m.stars) != n {
 		m.stars = make([]star, n)
@@ -181,8 +182,12 @@ func (m *Model) stepStars(energy float32) {
 			m.stars[i] = star{rand.Float32()*2 - 1, rand.Float32()*2 - 1, rand.Float32()}
 		}
 	}
-	// ponytail: fixed speeds, 1% of the depth per block idle up to 6% at full energy
+	// ponytail: fixed speeds, 1% of the depth per block idle up to 6% at full
+	// energy; with a beat, half that between beats and 3.5x on the beat
 	speed := 0.01 + 0.05*energy
+	if m.period() > 0 {
+		speed *= 0.5 + 3*m.pulse()
+	}
 	if m.warp() > 0 {
 		speed *= 4
 	}
@@ -331,12 +336,17 @@ var parrotFrames = func() [][]string {
 	return frames
 }()
 
-// stepParrot advances the animation on an energy budget: the louder the
-// music, the faster the parrot dances.
+// stepParrot dances one full cycle every two beats once the tempo is known.
+// Without a beat it runs on an energy budget: the louder the music, the faster.
 func (m *Model) stepParrot(energy float32) {
-	// ponytail: fixed rate of ~2 frames/s in silence up to ~28 at full energy
+	if m.period() > 0 {
+		phase := (float32(m.beats%2) + m.beat) / 2
+		m.parrotFrame = min(int(phase*float32(len(parrotFrames))), len(parrotFrames)-1)
+		return
+	}
+	// ponytail: fixed rate of ~1.5 frames/s in silence up to ~17 at full energy
 	// (parttysh runs at 15). Make it an option if the panel wants it calmer.
-	m.parrotAcc += 0.05 + 0.6*energy
+	m.parrotAcc += 0.035 + 0.35*energy
 	for m.parrotAcc >= 1 {
 		m.parrotAcc--
 		m.parrotFrame = (m.parrotFrame + 1) % len(parrotFrames)

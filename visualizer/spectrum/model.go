@@ -50,6 +50,12 @@ type Model struct {
 	parrotFrame int         // party parrot frame shown
 	parrotAcc   float32     // frame budget, one frame per whole unit
 	parrot      [][][]uint8 // frames scaled to the current size, see parrotMask
+
+	prevMix []float32  // last block's mix, for the onset flux
+	fluxAvg float32    // running average onset flux, for onset detection
+	tempo   *dsp.Tempo // beat tracker, created on the first block
+	beat    float32    // phase within the current beat, 0..1, meaningful while a tempo is known
+	beats   int        // beats counted, for effects that span several
 }
 
 // Option configures New.
@@ -152,6 +158,7 @@ func (m *Model) SetBands(n int) {
 	m.vx = make([][]float32, m.channels)
 	m.px = make([][]float32, m.channels)
 	m.mix = make([]float32, n)
+	m.prevMix = make([]float32, n)
 	for ch := range m.bars {
 		m.bars[ch] = make([]float32, n)
 		m.peaks[ch] = make([]float32, n)
@@ -163,7 +170,31 @@ func (m *Model) SetBands(n int) {
 }
 
 func (m *Model) SetPalette(p Palette) { m.palette = p }
-func (m Model) NumBands() int         { return m.bands }
+
+// BPM is the detected tempo, 0 while no beat is found.
+func (m Model) BPM() float64 {
+	if m.tempo == nil {
+		return 0
+	}
+	return m.tempo.BPM()
+}
+
+// period is the beat length in blocks, 0 while no beat is found.
+func (m Model) period() float64 {
+	if m.tempo == nil {
+		return 0
+	}
+	return m.tempo.Period()
+}
+
+// pulse is 1 on the beat easing to 0 before the next, or 0 without a tempo.
+func (m Model) pulse() float32 {
+	if m.period() == 0 {
+		return 0
+	}
+	return (1 - m.beat) * (1 - m.beat)
+}
+func (m Model) NumBands() int { return m.bands }
 
 // Frame is the current picture, rows top to bottom. Zero pixels are off.
 func (m Model) Frame() [][]color.RGBA { return m.frame }
@@ -231,6 +262,36 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.burst, dropped, big = 30, true, energy > 1.7*m.energyAvg
 		}
 		m.energyAvg += (energy - m.energyAvg) * 0.015
+		// onset flux: how much the spectrum rose since the last block
+		var flux float32
+		for b, l := range m.mix {
+			flux += max(0, l-m.prevMix[b])
+		}
+		copy(m.prevMix, m.mix)
+		if m.tempo == nil && len(msg) > 0 && len(msg[0]) > 0 {
+			m.tempo = dsp.NewTempo(float64(m.rate) / float64(len(msg[0])))
+		}
+		if m.tempo != nil {
+			m.tempo.Add(flux)
+		}
+		// ponytail: fixed onset rule, flux twice its ~0.5 s average
+		onset := m.fluxAvg > 0.01 && flux > 2*m.fluxAvg
+		m.fluxAvg += (flux - m.fluxAvg) * 0.05
+		// beat phase: runs at the tempo, pulled back to the start of the beat
+		// by an onset that lands near it
+		if p := m.period(); p > 0 {
+			m.beat += 1 / float32(p)
+			if m.beat >= 1 {
+				m.beat--
+				m.beats++
+			}
+			if onset && (m.beat > 0.8 || m.beat < 0.2) {
+				if m.beat > 0.8 { // the beat came early: it still counts
+					m.beats++
+				}
+				m.beat = 0
+			}
+		}
 		if m.peakStyle == Beat && dropped { // Beat peaks fly for the burst, a big drop scatters them
 			for ch := range m.hold {
 				clear(m.hold[ch]) // launch now, do not wait out the hold

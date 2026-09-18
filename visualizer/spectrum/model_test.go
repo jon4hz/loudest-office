@@ -731,6 +731,42 @@ func TestParrotDancesFasterWhenLoud(t *testing.T) {
 	}
 }
 
+func TestParrotDancesOnTheBeat(t *testing.T) {
+	m := New(Channels(1), Bands(8), FFTSize(1024), Size(50, 36), WithMode(Parrot))
+	loud, quiet := sine(1024, 1000), sine(1024, 1000)
+	for i := range quiet {
+		quiet[i] *= 0.1
+	}
+	const period = 21 // blocks of 1024 at 44.1 kHz: ~123 BPM
+	crossings := 0
+	beat := func() {
+		for i := range period {
+			block := quiet
+			if i == 0 {
+				block = loud
+			}
+			before := m.parrotFrame
+			m, _ = m.Update(SamplesMsg{block})
+			if before >= 5 && m.parrotFrame < 5 {
+				crossings++
+			}
+		}
+	}
+	for range 30 {
+		beat()
+	}
+	if bpm := m.BPM(); bpm < 118 || bpm > 128 {
+		t.Fatalf("BPM %.1f, want ~123", bpm)
+	}
+	crossings = 0
+	for range 20 {
+		beat()
+	}
+	if crossings < 9 || crossings > 11 {
+		t.Fatalf("%d dance cycles in 20 beats, want one every two beats", crossings)
+	}
+}
+
 func TestParrotMaskFollowsResize(t *testing.T) {
 	m := New(Channels(1), Bands(8), FFTSize(256), Size(50, 36), WithMode(Parrot))
 	m.draw()
@@ -757,5 +793,51 @@ func TestParrotMaskFollowsResize(t *testing.T) {
 	m.draw()
 	if len(m.parrot[0]) != 72 || len(m.parrot[0][0]) != 100 {
 		t.Fatal("mask not rebuilt for the new size")
+	}
+}
+
+func TestStarsSurgeOnTheBeat(t *testing.T) {
+	m := New(Channels(1), Bands(8), FFTSize(1024), Size(16, 8), WithMode(Starfield))
+	loud, quiet := sine(1024, 1000), sine(1024, 1000)
+	for i := range quiet {
+		quiet[i] *= 0.1
+	}
+	const period = 21
+	m, _ = m.Update(SamplesMsg{quiet}) // allocates the stars
+	// speed is the mean depth step of the stars that did not respawn
+	speed := func(block []float32) float32 {
+		before := append([]star(nil), m.stars...)
+		m, _ = m.Update(SamplesMsg{block})
+		var sum float32
+		n := 0
+		for i, s := range m.stars {
+			if s.z < before[i].z {
+				sum += before[i].z - s.z
+				n++
+			}
+		}
+		return sum / float32(max(n, 1))
+	}
+	var onBeat, offBeat float32
+	for b := range 40 {
+		for i := range period {
+			block := quiet
+			if i == 0 {
+				block = loud
+			}
+			v := speed(block)
+			if b >= 30 && i == 1 { // the quiet block right after the beat
+				onBeat += v
+			}
+			if b >= 30 && i == period/2 { // the quiet block halfway to the next
+				offBeat += v
+			}
+		}
+	}
+	if m.BPM() == 0 {
+		t.Fatal("no tempo found")
+	}
+	if onBeat < 2*offBeat {
+		t.Fatalf("stars should surge on the beat: %v right after vs %v halfway", onBeat, offBeat)
 	}
 }
