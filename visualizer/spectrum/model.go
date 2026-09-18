@@ -3,6 +3,8 @@ package spectrum
 import (
 	"fmt"
 	"image/color"
+	"math"
+	"math/rand/v2"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -33,7 +35,8 @@ type Model struct {
 	bars   [][]float32
 	peaks  [][]float32
 	hold   [][]int
-	vel    [][]float32 // upward speed of flying peaks
+	vel    [][]float32 // vertical speed of flying peaks (negative = down)
+	vx, px [][]float32 // sideways speed and offset of chaotic peaks, in bands
 	frame  [][]color.RGBA
 }
 
@@ -134,11 +137,15 @@ func (m *Model) SetBands(n int) {
 	m.peaks = make([][]float32, m.channels)
 	m.hold = make([][]int, m.channels)
 	m.vel = make([][]float32, m.channels)
+	m.vx = make([][]float32, m.channels)
+	m.px = make([][]float32, m.channels)
 	for ch := range m.bars {
 		m.bars[ch] = make([]float32, n)
 		m.peaks[ch] = make([]float32, n)
 		m.hold[ch] = make([]int, n)
 		m.vel[ch] = make([]float32, n)
+		m.vx[ch] = make([]float32, n)
+		m.px[ch] = make([]float32, n)
 	}
 }
 
@@ -178,31 +185,45 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				loudest = max(loudest, l)
 				energy += l / float32(len(lv)*m.channels)
 				m.bars[ch][b] = max(l, m.bars[ch][b]-m.fall)
+				p := &m.peaks[ch][b]
 				switch {
-				case m.bars[ch][b] >= m.peaks[ch][b] || m.peaks[ch][b] > 1.2: // caught up, or flown out
-					m.peaks[ch][b], m.hold[ch][b], m.vel[ch][b] = m.bars[ch][b], m.peakHold, 0
+				case (m.bars[ch][b] >= *p && m.vel[ch][b] >= 0) || *p > 1.2 || *p < -0.2: // caught up, or flown out
+					*p, m.hold[ch][b], m.vel[ch][b], m.vx[ch][b], m.px[ch][b] = m.bars[ch][b], m.peakHold, 0, 0, 0
 				case m.hold[ch][b] > 0:
 					m.hold[ch][b]--
 				case m.peakStyle == Flying || (m.peakStyle == Beat && m.burst > 0):
 					// ponytail: fixed launch acceleration, ~0.5 s from bar to top
-					m.vel[ch][b] += 0.004
-					m.peaks[ch][b] += m.vel[ch][b]
+					if m.vel[ch][b] < 0 {
+						m.vel[ch][b] -= 0.004
+					} else {
+						m.vel[ch][b] += 0.004
+					}
+					*p += m.vel[ch][b]
+					m.px[ch][b] += m.vx[ch][b]
 				default:
 					m.peaks[ch][b] = max(m.bars[ch][b], m.peaks[ch][b]-m.peakFall)
 				}
 			}
 		}
 		if m.peakStyle == Beat {
-			// ponytail: fixed drop detector: energy 1.5x above a ~1 s average
-			// launches every peak for ~0.7 s. Tune here if it fires too often.
+			// ponytail: fixed drop detector: energy 1.5x above a ~2 s average
+			// launches every peak for ~0.7 s, 1.7x scatters them. A running
+			// burst is never re-triggered, so the flight stays clean.
 			m.burst = max(m.burst-1, 0)
-			if m.energyAvg > 0.02 && energy > 1.5*m.energyAvg {
+			if m.burst == 0 && m.energyAvg > 0.02 && energy > 1.5*m.energyAvg {
 				m.burst = 30
+				chaos := energy > 1.7*m.energyAvg // a big drop: scatter the peaks
 				for ch := range m.hold {
 					clear(m.hold[ch]) // launch now, do not wait out the hold
+					for b := range m.hold[ch] {
+						if chaos {
+							m.vel[ch][b] = rand.Float32()*0.08 - 0.03 // some up, some down
+							m.vx[ch][b] = rand.Float32()*0.3 - 0.15   // drift sideways
+						}
+					}
 				}
 			}
-			m.energyAvg += (energy - m.energyAvg) * 0.03
+			m.energyAvg += (energy - m.energyAvg) * 0.015
 		}
 		if m.autoGain {
 			// ponytail: fixed attack/release in dB per block (~23 ms); make
@@ -252,13 +273,25 @@ func (m *Model) draw() {
 			}
 		}
 		vflipped := m.layout == HMirrored && ch%2 == 1
+		xOf := func(b int) int {
+			if flipped {
+				return left + (m.bands-1-b)*barW + gap // gap on the centre side
+			}
+			return left + b*barW
+		}
+		rowOf := func(y int) int {
+			if vflipped {
+				return top + y
+			}
+			return top + height - 1 - y
+		}
+		paint := func(row, x int, c color.RGBA) {
+			for i := 0; i < barW-gap; i++ {
+				m.frame[row][x+i] = c
+			}
+		}
 		for b := range m.bars[ch] {
 			barH := int(m.bars[ch][b]*float32(height) + 0.5)
-			peakY := int(m.peaks[ch][b]*float32(height-1) + 0.5)
-			x := left + b*barW
-			if flipped {
-				x = left + (m.bands-1-b)*barW + gap // gap on the centre side
-			}
 			ph := height
 			if m.palette.Relative {
 				ph = max(barH, 1)
@@ -268,25 +301,21 @@ func (m *Model) draw() {
 				// ponytail: fixed roll speed of one band per 8 blocks (~5 bands/s)
 				pb = (b + m.tick/8) % m.bands
 			}
-			for y := 0; y < height; y++ {
-				bar, peak := m.palette.At(pb, m.bands, y, ph)
-				c := color.RGBA{}
-				if y < barH {
-					c = bar
+			for y := 0; y < barH && y < height; y++ {
+				if bar, _ := m.palette.At(pb, m.bands, y, ph); bar.A != 0 {
+					paint(rowOf(y), xOf(b), bar)
 				}
-				if y == peakY && m.peaks[ch][b] > 0 && peak.A != 0 && m.peakStyle != NoPeaks {
-					c = peak
-				}
-				if c.A == 0 {
-					continue
-				}
-				r := top + height - 1 - y
-				if vflipped {
-					r = top + y
-				}
-				for i := 0; i < barW-gap; i++ {
-					m.frame[r][x+i] = c
-				}
+			}
+			peakY := int(m.peaks[ch][b]*float32(height-1) + 0.5)
+			pc := b + int(math.Round(float64(m.px[ch][b])))
+			if m.peakStyle == NoPeaks || m.peaks[ch][b] <= 0 || peakY >= height || pc < 0 || pc >= m.bands {
+				continue
+			}
+			if peakY < int(m.bars[ch][pc]*float32(height)+0.5) {
+				continue // never inside the bar of the column it lands in
+			}
+			if _, peak := m.palette.At(pb, m.bands, peakY, ph); peak.A != 0 {
+				paint(rowOf(peakY), xOf(pc), peak)
 			}
 		}
 	}

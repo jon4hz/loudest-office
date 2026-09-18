@@ -274,13 +274,13 @@ func TestFlyingPeaksLaunchAndRearm(t *testing.T) {
 func TestBeatPeaksFlyOnADrop(t *testing.T) {
 	quiet := sine(256, 1000)
 	for i := range quiet {
-		quiet[i] *= 0.03
+		quiet[i] *= 0.32 // a plain hit (measured 1.63x the average), between the hit and scatter lines
 	}
 	loud := sine(256, 1000)
 	silence := make([]float32, 256)
 	run := func(style PeakStyle) bool {
 		m := New(Channels(1), Bands(8), FFTSize(256), Size(16, 8), PeakHold(5), FallSpeed(0.05), WithPeakStyle(style))
-		for range 100 { // settle the running energy average on a quiet passage
+		for range 300 { // settle the ~2 s running energy average on a quiet passage
 			m, _ = m.Update(SamplesMsg{quiet})
 		}
 		m, _ = m.Update(SamplesMsg{loud}) // the drop
@@ -302,5 +302,64 @@ func TestBeatPeaksFlyOnADrop(t *testing.T) {
 	}
 	if s, ok := ParsePeakStyle("beat"); !ok || s != Beat {
 		t.Fatal("ParsePeakStyle beat")
+	}
+}
+
+// noise is deterministic broadband noise so every band gets a level.
+func noise(n int, amp float32) []float32 {
+	s := make([]float32, n)
+	x := uint32(12345)
+	for i := range s {
+		x = x*1664525 + 1013904223
+		s[i] = amp * (float32(x>>8)/float32(1<<24)*2 - 1)
+	}
+	return s
+}
+
+func TestBeatChaosOnABigDrop(t *testing.T) {
+	m := New(Channels(1), Bands(32), FFTSize(256), Size(64, 8), PeakHold(5), FallSpeed(0.05), WithPeakStyle(Beat)) // 32 bands: all picking "up" is a 1 in 3 million chance
+	for range 300 {
+		m, _ = m.Update(SamplesMsg{noise(256, 0.05)})
+	}
+	m, _ = m.Update(SamplesMsg{noise(256, 1)}) // a big drop: well over 1.7x the average
+	up, down, drifted := false, false, false
+	silence := make([]float32, 256)
+	for range 40 {
+		m, _ = m.Update(SamplesMsg{silence})
+		for b := range m.peaks[0] {
+			up = up || m.peaks[0][b] > 1
+			down = down || m.peaks[0][b] < 0
+			drifted = drifted || m.px[0][b] != 0
+		}
+		m.draw() // peaks off-screen or in other columns must not panic
+	}
+	if !up || !down || !drifted {
+		t.Fatalf("chaos burst: up=%v down=%v drifted=%v", up, down, drifted)
+	}
+}
+
+func TestPeakNeverDrawnInsideABar(t *testing.T) {
+	p, _ := PaletteByName("white") // white bars, red peak
+	m := New(Channels(1), Bands(2), FFTSize(256), Size(2, 10), WithPalette(p))
+	// band 0: peak below its own bar; band 1: a tall bar that band 0's peak drifts into
+	m.bars[0][0], m.peaks[0][0] = 0.8, 0.3
+	m.bars[0][1] = 0.9
+	m.draw()
+	for y, row := range m.Frame() {
+		if row[0] == red || row[1] == red {
+			t.Fatalf("row %d: peak drawn inside a bar: %v", y, row)
+		}
+	}
+	m.px[0][0] = 1 // drift into column 1, still below that bar's top
+	m.draw()
+	for y, row := range m.Frame() {
+		if row[1] == red {
+			t.Fatalf("row %d: drifted peak drawn inside the neighbouring bar", y)
+		}
+	}
+	m.peaks[0][0], m.px[0][0] = 0.95, 0 // above its own bar: must show
+	m.draw()
+	if m.Frame()[0][0] != red {
+		t.Fatal("peak above the bar should be drawn")
 	}
 }

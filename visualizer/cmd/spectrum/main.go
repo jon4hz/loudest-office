@@ -7,7 +7,7 @@
 //	spectrum -layout mirror        # stacked (default), side, mirror or hmirror
 //	spectrum -cmd arecord -device hw:0   # on the Pi
 //
-// Keys: q quit, c next palette, l next layout, +/- bands.
+// Keys: q quit, c/C next/previous palette, l next layout, +/- bands.
 package main
 
 import (
@@ -96,6 +96,9 @@ func (a app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "c":
 			a.pal = (a.pal + 1) % len(spectrum.Palettes)
 			a.spec.SetPalette(spectrum.Palettes[a.pal])
+		case "C":
+			a.pal = (a.pal + len(spectrum.Palettes) - 1) % len(spectrum.Palettes)
+			a.spec.SetPalette(spectrum.Palettes[a.pal])
 		case "l":
 			a.spec.SetLayout((a.spec.Layout() + 1) % (spectrum.HMirrored + 1))
 		case "p":
@@ -156,7 +159,7 @@ func main() {
 		Short: "Terminal spectrum analyzer of the default audio output",
 		Long: `Terminal spectrum analyzer of the default audio output.
 
-Keys: q quit, c next palette, l next layout, p next peak style, a toggle auto loop, +/- bands.`,
+Keys: q quit, c/C next/previous palette, l next layout, p next peak style, a toggle auto loop, +/- bands.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return run(cmd.Context(), cfg, bands, gain, mono, autoGain, palette, layoutName, peaksName, loopLayouts, loop)
