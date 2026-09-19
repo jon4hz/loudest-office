@@ -28,7 +28,9 @@ FRAME payload is `u8 pixfmt (0 = RGB565)`, `u8 flags (0)`, then
 PlatformIO, Arduino framework, the HUB75 DMA library as the only `lib_deps`.
 
 - Envs `esp32dev` (default) and `esp32s3` (`-DARDUINO_USB_MODE=1
-  -DARDUINO_USB_CDC_ON_BOOT=1`). Baud is a build flag, default 2 000 000.
+  -DARDUINO_USB_CDC_ON_BOOT=1`). Baud is a build flag, default 921 600: the
+  board at hand has a classic CP2102 (10c4:ea60, bcdDevice 1.00), which cannot
+  go faster.
 - `double_buff = true`. RGB colour bars are drawn at boot, before any serial
   traffic; they double as the pin-map / colour-order check.
 - Byte-at-a-time parser `MAGIC1 → MAGIC2 → HEADER → PAYLOAD → CRC`; a bad byte
@@ -60,7 +62,7 @@ PlatformIO, Arduino framework, the HUB75 DMA library as the only `lib_deps`.
   channel: a pending frame is replaced, never queued. A reader goroutine keeps
   the latest STATUS. Any I/O error closes the port and re-enters the connect
   loop. `Close` sends BLANK.
-- `cmd/spectrum`: `--serial <port>`, `--baud` (2000000), `--brightness` (0–255).
+- `cmd/spectrum`: `--serial <port>`, `--baud` (921600), `--brightness` (0–255).
   With `--serial` the model is fixed to the INFO size via `spectrum.Size` and
   each `SamplesMsg` update sends `Model.Frame()`. When stdout is not a terminal
   the program runs with `tea.WithoutRenderer()` and no input. The last STATUS

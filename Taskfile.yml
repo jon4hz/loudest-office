@@ -22,6 +22,7 @@ tasks:
   run:
     desc: Run the site playbook against the raspi (extra args via CLI_ARGS)
     dir: ansible
+    deps: [visualizer:build]
     cmds:
       - uv run ansible-navigator run playbooks/site.yml {{.CLI_ARGS}}
 
@@ -30,3 +31,45 @@ tasks:
     dir: ansible
     cmds:
       - uv run ansible-lint
+
+  firmware:test:
+    desc: Check the firmware's packet parser on the host
+    dir: firmware/test
+    vars:
+      TMP:
+        sh: mktemp -d
+    cmds:
+      - g++ -std=c++17 -Wall -o {{.TMP}}/parser_test parser_test.cpp
+      - "{{.TMP}}/parser_test"
+
+  firmware:flash:
+    desc: Build and flash the ESP32 (ENV=esp32dev|esp32s3, extra args via CLI_ARGS)
+    dir: firmware
+    cmds:
+      - pio run -e {{.ENV | default "esp32dev"}} -t upload {{.CLI_ARGS}}
+
+  firmware:bin:
+    desc: Build one merged image to flash with plain esptool, e.g. from the Pi
+    dir: firmware
+    vars:
+      ENV: '{{.ENV | default "esp32dev"}}'
+      CHIP: '{{if eq .ENV "esp32s3"}}esp32s3{{else}}esp32{{end}}'
+      BOOT: '{{if eq .ENV "esp32s3"}}0x0{{else}}0x1000{{end}}'
+    cmds:
+      - pio run -e {{.ENV}}
+      - >-
+        pio pkg exec -p tool-esptoolpy -- esptool.py --chip {{.CHIP}} merge_bin -o fw-{{.ENV}}.bin
+        {{.BOOT}} .pio/build/{{.ENV}}/bootloader.bin
+        0x8000 .pio/build/{{.ENV}}/partitions.bin
+        0xe000 ~/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin
+        0x10000 .pio/build/{{.ENV}}/firmware.bin
+
+  visualizer:build:
+    desc: Cross-compile the visualizer for the raspi into the ansible role's build context
+    dir: visualizer
+    env:
+      CGO_ENABLED: "0"
+      GOOS: linux
+      GOARCH: arm64
+    cmds:
+      - go build -trimpath -ldflags "-s -w" -o ../ansible/roles/visualizer/files/build/spectrum ./cmd/spectrum

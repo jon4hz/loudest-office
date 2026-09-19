@@ -1,0 +1,10 @@
+---
+- name: Reload udev rules
+  ansible.builtin.command: udevadm control --reload
+  changed_when: true
+  listen: reload_udev
+
+- name: Re-trigger tty devices
+  ansible.builtin.command: udevadm trigger --subsystem-match=tty --settle
+  changed_when: true
+  listen: reload_udev

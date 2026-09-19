@@ -4,3 +4,6 @@ ansible/ansible-navigator.log
 ansible/*.json
 __pycache__/
 .task/
+firmware/.pio/
+firmware/fw-*.bin
+ansible/roles/visualizer/files/build/spectrum

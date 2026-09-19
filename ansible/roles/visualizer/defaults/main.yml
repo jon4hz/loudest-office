@@ -1,0 +1,19 @@
+---
+visualizer_serial: /dev/hub75
+# spectrum's config file: the flags of `spectrum --help`, with - as _
+visualizer_config:
+  cmd: arecord
+  # plughw: the ADC does not do S16_LE natively
+  device: plughw:CARD=sndrpihifiberry
+  # The DAC and the ADC share one clock: capturing at another rate than sendspin plays
+  # at pulls the clock away from the playback and the music stutters ("Lost sync").
+  rate: 48000
+  serial: "{{ visualizer_serial }}"
+  brightness: 64
+  # only one ADC channel carries signal, and a second, silent spectrum would take
+  # half the panel. The downmix averages the channels, the gain makes up for it.
+  mono: true
+  gain: 8
+  loop: 60s
+  # repeat a mode to make it likelier
+  loop_modes: [bars, bars, bars, bars, bars, bars, bars, bars, fire, life, life, fireworks, fireworks, stars, stars, parrot]

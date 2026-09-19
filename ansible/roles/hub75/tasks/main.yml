@@ -1,0 +1,11 @@
+---
+- name: Deploy udev rule for the panel's ESP32
+  ansible.builtin.copy:
+    src: 99-hub75.rules
+    dest: /etc/udev/rules.d/99-hub75.rules
+    mode: "0644"
+  notify: reload_udev
+
+# /dev/hub75 has to exist before the visualizer starts
+- name: Apply udev rule
+  ansible.builtin.meta: flush_handlers

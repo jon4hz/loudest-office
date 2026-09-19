@@ -7,3 +7,7 @@
     group: "{{ podman_compose_user.name }}"
     mode: u=rwX,g=rX,o=
   notify: restart_compose_service
+
+# the handler uses podman_compose_user, which the next service using podman_compose overwrites
+- name: Restart the compose service if needed
+  ansible.builtin.meta: flush_handlers

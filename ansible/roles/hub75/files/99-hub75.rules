@@ -1,0 +1,3 @@
+# ESP32 devkit (CP2102 bridge) that drives the HUB75 panel: a stable name for the
+# visualizer. tty devices carry the systemd tag already, so dev-hub75.device exists.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", SYMLINK+="hub75"

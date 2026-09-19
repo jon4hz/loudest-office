@@ -20,3 +20,6 @@
 
     - role: music_assistant
       tags: [music_assistant]
+
+    - role: visualizer
+      tags: [visualizer]
