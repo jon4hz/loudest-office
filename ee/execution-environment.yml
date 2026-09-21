@@ -3,7 +3,7 @@ version: 3
 
 images:
   base_image:
-    name: docker.io/redhat/ubi10:10.2-1788218897
+    name: docker.io/redhat/ubi10:10.2-1789459392
 
 dependencies:
   ansible_core:
