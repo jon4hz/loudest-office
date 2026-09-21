@@ -1,7 +1,7 @@
 ---
 services:
   music-assistant:
-    image: ghcr.io/music-assistant/server:2.10.2
+    image: ghcr.io/music-assistant/server:2.10.4@sha256:37a9a2776e838a754c9f5b38c432567389952304e7cb8f6b44b6cd28043de6de
     container_name: music-assistant
     restart: unless-stopped
     # required for local player discovery (mDNS/uPnP); web UI on :8095, streams on :8097
