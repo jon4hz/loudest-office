@@ -1,0 +1,27 @@
+---
+visualizer_serial: /dev/hub75
+visualizer_timezone: Europe/Zurich
+# spectrum's config file: the flags of `spectrum --help`, with - as _
+visualizer_config:
+  cmd: arecord
+  # plughw: the ADC does not do S16_LE natively
+  device: plughw:CARD=sndrpihifiberry
+  # The DAC and the ADC share one clock: capturing at another rate than sendspin plays
+  # at pulls the clock away from the playback and the music stutters ("Lost sync").
+  rate: 48000
+  serial: "{{ visualizer_serial }}"
+  brightness: 64
+  # only one ADC channel carries signal, and a second, silent spectrum would take
+  # half the panel. The downmix averages the channels, the gain makes up for it.
+  mono: true
+  gain: 8
+  fps: 20
+  listen: ":8099"
+  state: /data/state.json
+
+# Now playing: Music Assistant's URL as the container sees it (host network),
+# the player ID and a long-lived token. The token belongs in the vault:
+# see inventory/group_vars/raspi/visualizer.yml. Empty URL = off.
+visualizer_ma_url: ""
+visualizer_ma_player: ""
+visualizer_ma_token: ""

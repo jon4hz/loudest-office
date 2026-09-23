@@ -1,0 +1,4 @@
+{{ ansible_managed | comment }}
+{# `| string` decrypts the vaulted token: to_nice_yaml would write it back as `!vault |` + ciphertext #}
+{% set ma = {'ma_url': visualizer_ma_url, 'ma_player': visualizer_ma_player, 'ma_token': visualizer_ma_token | string} if visualizer_ma_url else {} %}
+{{ visualizer_config | combine(ma) | to_nice_yaml }}

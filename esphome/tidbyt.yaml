@@ -1,0 +1,103 @@
+# Tidbyt v1 as a WiFi panel for the visualizer: `spectrum --serial tcp://<ip>:7090`.
+# Copy secrets.yaml.example to secrets.yaml first. See ../README.md.
+esphome:
+  name: tidbyt
+  friendly_name: Tidbyt
+
+esp32:
+  board: esp32dev
+  flash_size: 8MB
+  framework:
+    type: esp-idf
+
+logger:
+
+api:
+  encryption:
+    key: !secret api_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  # modem sleep delays frames by up to a beacon interval (100 ms)
+  power_save_mode: none
+  # a roam scan takes the radio off the channel: four seconds at 8 fps, every few minutes
+  post_connect_roaming: false
+  # The visualizer reaches the panel by IP (mDNS/.local does not resolve from inside
+  # its container), so give it a fixed address here, or a DHCP reservation instead.
+  # manual_ip:
+  #   static_ip: 192.168.1.123
+  #   gateway: 192.168.1.1
+  #   subnet: 255.255.255.0
+
+# Why and how often it restarts, in Home Assistant's history.
+debug:
+  update_interval: 60s
+
+text_sensor:
+  - platform: debug
+    reset_reason:
+      name: Reset reason
+
+sensor:
+  - platform: debug
+    free:
+      name: Heap free
+    loop_time:
+      name: Loop time
+  - platform: uptime
+    name: Uptime
+  - platform: wifi_signal
+    name: WiFi signal
+    update_interval: 60s
+
+external_components:
+  - source:
+      type: local
+      path: components
+
+display:
+  - platform: hub75
+    id: panel
+    # 64x32 is also compiled into proto.h (PANEL_W/PANEL_H); change both together.
+    panel_width: 64
+    panel_height: 32
+    double_buffer: true
+    # As Tronbyt drives this panel (main/display.cpp: FM6126A, inverted clock, 10 MHz). The
+    # FM6126A chips want their init sequence, and with the clock not inverted the data is
+    # sampled on the wrong edge: a single garbled row at 20 MHz, at 8 MHz a picture that
+    # glitches now and then and can scramble the chips until the next power cycle.
+    shift_driver: FM6126A
+    clock_phase: true
+    clock_speed: 8MHZ
+    brightness: 64
+    update_interval: never
+    auto_clear_enabled: false # panel_stream paints every pixel
+    # Pin map from tronbyt/firmware-esp32. If the boot bars are not red, green,
+    # blue, the unit is the colour-swapped variant:
+    #   r1_pin: 21, g1_pin: 2, b1_pin: 22, r2_pin: 23, g2_pin: 4, b2_pin: 27
+    r1_pin: 2
+    g1_pin: 22
+    b1_pin: 21
+    r2_pin: 4
+    g2_pin: 27
+    b2_pin: 23
+    a_pin: 26
+    b_pin: 5
+    c_pin: 25
+    d_pin: 18
+    lat_pin: 19
+    oe_pin: 32
+    clk_pin: 33
+    lambda: id(stream).draw(it);
+
+panel_stream:
+  id: stream
+  display_id: panel
+  port: 7090
+  # the panel is fed from the USB port; Tronbyt uses the same cap
+  max_brightness: 100

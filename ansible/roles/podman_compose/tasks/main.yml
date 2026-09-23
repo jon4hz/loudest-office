@@ -42,6 +42,26 @@
     group: "{{ podman_compose_name }}"
     mode: "0750"
 
+- name: Deploy extra files
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ podman_compose_user.home }}/"
+    owner: "{{ podman_compose_name }}"
+    group: "{{ podman_compose_name }}"
+    mode: u=rwX,g=rX,o=
+  loop: "{{ podman_compose_files }}"
+  notify: restart_compose_service
+
+- name: Deploy extra templates
+  ansible.builtin.template:
+    src: "{{ item }}"
+    dest: "{{ podman_compose_user.home }}/{{ item | basename | regex_replace('\\.j2$', '') }}"
+    owner: "{{ podman_compose_name }}"
+    group: "{{ podman_compose_name }}"
+    mode: "0640"
+  loop: "{{ podman_compose_templates }}"
+  notify: restart_compose_service
+
 - name: Deploy compose file
   ansible.builtin.template:
     src: "{{ podman_compose_src }}"
@@ -59,6 +79,10 @@
     group: "{{ podman_compose_name }}"
     mode: "0640"
   notify: restart_compose_service
+
+# the handlers use podman_compose_user, which the next service using this role overwrites
+- name: Restart the compose service if needed
+  ansible.builtin.meta: flush_handlers
 
 - name: Enable and start compose service
   ansible.builtin.systemd_service:

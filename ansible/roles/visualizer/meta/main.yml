@@ -1,0 +1,12 @@
+---
+dependencies:
+  - role: hub75
+  - role: podman_compose
+    vars:
+      podman_compose_name: visualizer
+      podman_compose_src: compose.yml.j2
+      podman_compose_user_groups: [audio, dialout] # /dev/snd and the ESP32's serial port
+      podman_compose_files: [build] # Dockerfile + the binary from `task visualizer:build`
+      podman_compose_templates: [config.yaml.j2] # mounted where spectrum looks for it
+      podman_compose_build: true
+      podman_compose_binds_to: dev-hub75.device

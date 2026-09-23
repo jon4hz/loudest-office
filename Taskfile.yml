@@ -22,6 +22,7 @@ tasks:
   run:
     desc: Run the site playbook against the raspi (extra args via CLI_ARGS)
     dir: ansible
+    deps: [visualizer:build]
     cmds:
       - uv run ansible-navigator run playbooks/site.yml {{.CLI_ARGS}}
 
@@ -30,3 +31,91 @@ tasks:
     dir: ansible
     cmds:
       - uv run ansible-lint
+
+  firmware:test:
+    desc: Check the firmware's packet parser on the host
+    dir: firmware/test
+    vars:
+      TMP:
+        sh: mktemp -d
+    cmds:
+      - g++ -std=c++17 -Wall -o {{.TMP}}/parser_test parser_test.cpp
+      - "{{.TMP}}/parser_test"
+
+  firmware:flash:
+    desc: Build and flash the ESP32 (ENV=esp32dev|esp32s3, extra args via CLI_ARGS)
+    dir: firmware
+    cmds:
+      - pio run -e {{.ENV | default "esp32dev"}} -t upload {{.CLI_ARGS}}
+
+  firmware:bin:
+    desc: Build one merged image to flash with plain esptool, e.g. from the Pi
+    dir: firmware
+    vars:
+      ENV: '{{.ENV | default "esp32dev"}}'
+      CHIP: '{{if eq .ENV "esp32s3"}}esp32s3{{else}}esp32{{end}}'
+      BOOT: '{{if eq .ENV "esp32s3"}}0x0{{else}}0x1000{{end}}'
+    cmds:
+      - pio run -e {{.ENV}}
+      - >-
+        pio pkg exec -p tool-esptoolpy -- esptool.py --chip {{.CHIP}} merge_bin -o fw-{{.ENV}}.bin
+        {{.BOOT}} .pio/build/{{.ENV}}/bootloader.bin
+        0x8000 .pio/build/{{.ENV}}/partitions.bin
+        0xe000 ~/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin
+        0x10000 .pio/build/{{.ENV}}/firmware.bin
+
+  esphome:compile:
+    desc: Build the Tidbyt's ESPHome firmware
+    dir: esphome
+    cmds:
+      - uvx esphome@2026.9.0 compile tidbyt.yaml
+
+  esphome:run:
+    desc: Build and flash the Tidbyt (the first time over USB, then over the air) and show its log
+    dir: esphome
+    cmds:
+      - uvx esphome@2026.9.0 run tidbyt.yaml {{.CLI_ARGS}}
+
+  visualizer:test:
+    desc: Vet and test the visualizer
+    dir: visualizer
+    cmds:
+      - go vet ./...
+      - go test ./...
+
+  visualizer:build:
+    desc: Cross-compile the visualizer for the raspi into the ansible role's build context
+    dir: visualizer
+    env:
+      CGO_ENABLED: "0"
+      GOOS: linux
+      GOARCH: arm64
+    cmds:
+      # nodynamic: gen2brain/webp without purego, which would link the binary against glibc; the image is Alpine
+      - go build -tags nodynamic -trimpath -ldflags "-s -w" -o ../ansible/roles/visualizer/files/build/spectrum ./cmd/spectrum
+      - rm -rf ../ansible/roles/visualizer/files/build/sendspin-pipe && cp -r cmd/sendspin-pipe ../ansible/roles/visualizer/files/build/sendspin-pipe && rm -f ../ansible/roles/visualizer/files/build/sendspin-pipe/sendspin-pipe
+
+  addon:deploy:
+    desc: Copy the Home Assistant app to the Pi and rebuild it (HA=<user>@<pi>, a user with sudo)
+    deps: [visualizer:build]
+    requires:
+      vars: [HA]
+    vars:
+      DIR: /addons/loudest_visualizer
+      SLUG: local_loudest_visualizer
+    cmds:
+      # one tar stream: the app's config next to the office image's build context
+      - >-
+        tar -c -C addon config.yaml
+        -C ../ansible/roles/visualizer/files/build Dockerfile spectrum sendspin-pipe
+        | ssh {{.HA}} 'sudo rm -rf {{.DIR}} && sudo mkdir -p {{.DIR}} && sudo tar -x -C {{.DIR}} --no-same-owner'
+      - ssh {{.HA}} 'bash -lc "ha store reload"'
+      # Not installed yet (the store knows it, its version is null): install it, then set its options and start it in the UI.
+      # A new version in config.yaml: update, the Supervisor refuses to rebuild then. Else rebuild.
+      # Both restart a running app.
+      # ha needs a login shell: that is where the SSH app puts the Supervisor's API token; under sudo it is gone.
+      - >-
+        ssh {{.HA}} 'bash -lc "i=\$(ha apps info {{.SLUG}});
+        if echo \"\$i\" | grep -q \"^version: null\"; then ha apps install {{.SLUG}};
+        elif echo \"\$i\" | grep -q \"^update_available: true\"; then ha apps update {{.SLUG}};
+        else ha apps rebuild {{.SLUG}}; fi"'

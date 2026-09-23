@@ -1,0 +1,36 @@
+# Home Assistant app (formerly add-on). `task addon:deploy HA=<user>@<pi>` copies this file
+# next to the office image's build context into /addons/loudest_visualizer on the Pi.
+# The options are spectrum's config keys: spectrum reads /data/options.json as its config.
+name: Loudest Office Visualizer
+version: "0.2.0"
+slug: loudest_visualizer
+description: Audio visualizer on a HUB75 panel over WiFi, fed by Music Assistant through Sendspin
+url: https://github.com/jon4hz/loudest-office
+arch: [aarch64]
+init: false
+host_network: true
+environment:
+  SPECTRUM_CONFIG: /data/options.json
+watchdog: http://[HOST]:8099/api/v1/state
+options:
+  cmd: sendspin-pipe
+  args: [--server, "127.0.0.1:8927", --name, Visualizer]
+  serial: tcp://192.168.16.70:7090
+  rate: 44100
+  brightness: 60
+  fps: 30
+  listen: ":8099"
+  state: /data/state.json
+schema:
+  cmd: str
+  args: [str]
+  serial: str
+  rate: int
+  brightness: int(0,255)
+  fps: int(1,120)
+  listen: str
+  state: str
+  tronbyt: str? # http://127.0.0.1:8000/<device id>/next; the device ID is a secret, so it is not a default here
+  ma_url: str? # now playing: http://127.0.0.1:8095
+  ma_token: password? # a long-lived token from the Music Assistant profile settings
+  ma_player: str? # the player ID, e.g. visualizer

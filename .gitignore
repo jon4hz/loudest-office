@@ -4,3 +4,11 @@ ansible/ansible-navigator.log
 ansible/*.json
 __pycache__/
 .task/
+firmware/.pio/
+firmware/fw-*.bin
+ansible/roles/visualizer/files/build/spectrum
+esphome/.esphome/
+esphome/secrets.yaml
+ansible/vault.txt
+visualizer/cmd/sendspin-pipe/sendspin-pipe
+ansible/roles/visualizer/files/build/sendspin-pipe/
