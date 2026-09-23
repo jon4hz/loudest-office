@@ -1,5 +1,6 @@
 ---
 visualizer_serial: /dev/hub75
+visualizer_timezone: Europe/Zurich
 # spectrum's config file: the flags of `spectrum --help`, with - as _
 visualizer_config:
   cmd: arecord
@@ -14,6 +15,13 @@ visualizer_config:
   # half the panel. The downmix averages the channels, the gain makes up for it.
   mono: true
   gain: 8
-  loop: 60s
-  # repeat a mode to make it likelier
-  loop_modes: [bars, bars, bars, bars, bars, bars, bars, bars, fire, life, life, fireworks, fireworks, stars, stars, parrot]
+  fps: 20
+  listen: ":8099"
+  state: /data/state.json
+
+# Now playing: Music Assistant's URL as the container sees it (host network),
+# the player ID and a long-lived token. The token belongs in the vault:
+# see inventory/group_vars/raspi/visualizer.yml. Empty URL = off.
+visualizer_ma_url: ""
+visualizer_ma_player: ""
+visualizer_ma_token: ""

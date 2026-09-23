@@ -8,6 +8,10 @@
 #define SERIAL_BAUD 921600
 #endif
 
+#ifndef PANEL_MAX_BRIGHTNESS // lower it for a panel without its own supply
+#define PANEL_MAX_BRIGHTNESS 255
+#endif
+
 static const uint16_t FW_VERSION = 1;
 static const uint32_t NO_SIGNAL_MS = 2000;
 
@@ -73,7 +77,7 @@ static void handle() {
     break;
   }
   case MSG_CONFIG: // gamma and rotation are not used yet
-    if (parser.len >= 1) panel->setBrightness8(parser.payload[0]);
+    if (parser.len >= 1) panel->setBrightness8(min<uint8_t>(parser.payload[0], PANEL_MAX_BRIGHTNESS));
     break;
   case MSG_BLANK:
     panel->clearScreen();

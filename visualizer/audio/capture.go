@@ -14,12 +14,13 @@ import (
 // Config describes the capture subprocess. Zero fields take the defaults
 // noted on each field.
 type Config struct {
-	Command  string   // "parec" (default) or "arecord"; anything else needs Args
-	Args     []string // overrides the generated arguments when set
-	Device   string   // default "@DEFAULT_SINK@.monitor"
-	Rate     int      // default 44100
-	Channels int      // default 2
-	Frames   int      // samples per channel per block, default 1024
+	Command  string    // "parec" (default) or "arecord"; anything else needs Args
+	Args     []string  // overrides the generated arguments when set
+	Device   string    // default "@DEFAULT_SINK@.monitor"
+	Rate     int       // default 44100
+	Channels int       // default 2
+	Frames   int       // samples per channel per block, default 1024
+	Stderr   io.Writer // where the command's stderr goes as well; nil = only kept for the exit error
 }
 
 func (c *Config) defaults() {
@@ -56,19 +57,41 @@ func (c *Config) defaults() {
 type Capture struct {
 	cmd    *exec.Cmd
 	cancel context.CancelFunc
-	stderr bytes.Buffer
+	stderr tailWriter
 	blocks chan [][]float32
 	err    error
 	done   chan struct{}
 }
+
+// tailWriter keeps only the last n bytes written, so a chatty long-running
+// child (e.g. sendspin-pipe logging dropped chunks) can't grow it unbounded.
+type tailWriter struct {
+	buf []byte
+	n   int
+}
+
+func (t *tailWriter) Write(p []byte) (int, error) {
+	t.buf = append(t.buf, p...)
+	if len(t.buf) > t.n {
+		t.buf = append([]byte(nil), t.buf[len(t.buf)-t.n:]...)
+	}
+	return len(p), nil
+}
+
+const stderrTailBytes = 4096
 
 // Start launches the subprocess and begins reading blocks.
 func Start(ctx context.Context, cfg Config) (*Capture, error) {
 	cfg.defaults()
 	ctx, cancel := context.WithCancel(ctx)
 	c := &Capture{cancel: cancel, blocks: make(chan [][]float32, 1), done: make(chan struct{})}
+	c.stderr.n = stderrTailBytes
 	c.cmd = exec.CommandContext(ctx, cfg.Command, cfg.Args...)
-	c.cmd.Stderr = &c.stderr
+	if cfg.Stderr != nil {
+		c.cmd.Stderr = io.MultiWriter(&c.stderr, cfg.Stderr)
+	} else {
+		c.cmd.Stderr = &c.stderr
+	}
 	out, err := c.cmd.StdoutPipe()
 	if err != nil {
 		cancel()
@@ -95,7 +118,7 @@ func (c *Capture) read(r io.Reader, channels, frames int) {
 		c.blocks <- Deinterleave(buf, channels)
 	}
 	if err := c.cmd.Wait(); err != nil {
-		c.err = fmt.Errorf("%s: %w: %s", c.cmd.Path, err, bytes.TrimSpace(c.stderr.Bytes()))
+		c.err = fmt.Errorf("%s: %w: %s", c.cmd.Path, err, bytes.TrimSpace(c.stderr.buf))
 	}
 }
 

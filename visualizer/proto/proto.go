@@ -120,9 +120,11 @@ func ParseInfo(p []byte) (InfoMsg, bool) {
 
 // StatusMsg holds the ESP's counters; they wrap at 65535.
 type StatusMsg struct {
-	FramesOK, CRCErr, SeqGaps uint16
-	FPS                       byte
-	TempC                     byte // 0xFF = no sensor
+	FramesOK uint16 `json:"frames_ok"`
+	CRCErr   uint16 `json:"crc_err"`
+	SeqGaps  uint16 `json:"seq_gaps"`
+	FPS      byte   `json:"fps"`
+	TempC    byte   `json:"temp_c"` // 0xFF = no sensor
 }
 
 func ParseStatus(p []byte) (StatusMsg, bool) {

@@ -31,5 +31,11 @@ int main() {
   assert(feed(p, oversized, sizeof oversized) == 0);
   assert(feed(p, hello, sizeof hello) == 1); // recovered
 
+  // a new TCP client must not inherit half a packet from the last one
+  static Parser q;
+  assert(feed(q, config, sizeof config / 2) == 0);
+  q.reset();
+  assert(feed(q, hello, sizeof hello) == 1 && q.crcErr == 0);
+
   puts("ok");
 }

@@ -67,6 +67,9 @@ struct Parser {
     return false;
   }
 
+  // reset forgets a half-received packet, e.g. when the peer changed.
+  void reset() { state = MAGIC1; }
+
 private:
   enum { MAGIC1, MAGIC2, HEADER, PAYLOAD, CRC } state = MAGIC1;
   uint8_t hdr[4];

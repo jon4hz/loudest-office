@@ -14,6 +14,7 @@
           - { port: "32768:60999", proto: tcp } # spotify connect zeroconf handshake
           - { port: 80, proto: tcp } # caddy http -> https redirect
           - { port: 443, proto: tcp } # caddy https reverse proxy
+          - { port: 8099, proto: tcp } # visualizer api (no auth, LAN only)
 
     - role: hifiberry
       tags: [hifiberry]

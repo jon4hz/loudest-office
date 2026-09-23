@@ -1,4 +1,4 @@
-// Package serial streams frames to the ESP32 behind a USB serial port.
+// Package serial streams frames to the ESP32 behind a USB serial port or a TCP socket.
 //
 // ponytail: Linux only (termios2 for arbitrary baud rates), like the capture
 // commands. go.bug.st/serial if this ever has to run elsewhere.
@@ -8,7 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"image/color"
+	"io"
+	"net"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,6 +27,48 @@ var bootWait = time.Second
 // settle is how long stale input gets to arrive before it is flushed.
 var settle = 50 * time.Millisecond
 
+// writeTimeout bounds one packet: a WiFi peer that vanished blocks Write forever otherwise.
+var writeTimeout = 2 * time.Second
+
+// statusTimeout is how long the panel may stay quiet; it sends a STATUS every second.
+var statusTimeout = 5 * time.Second
+
+// retry is the pause between two attempts to reach a lost panel.
+var retry = time.Second
+
+// conn is how the panel is reached: a tty, or TCP for the ESPHome firmware.
+type conn interface {
+	io.ReadWriteCloser
+	SetReadDeadline(time.Time) error
+	SetWriteDeadline(time.Time) error
+}
+
+// dial opens path: tcp://host:port, or a tty at the port's baud rate.
+func (p *Port) dial() (conn, error) {
+	addr, ok := strings.CutPrefix(p.path, "tcp://")
+	if !ok {
+		f, err := openRaw(p.path, p.baud)
+		if err != nil {
+			return nil, err // not f: a nil *os.File in a conn is not nil
+		}
+		return f, nil
+	}
+	c, err := net.DialTimeout("tcp", addr, 3*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	// Two frames. The writer replaces a pending frame instead of queueing it;
+	// a default socket buffer would queue dozens during a WiFi stall.
+	c.(*net.TCPConn).SetWriteBuffer(8192)
+	return c, nil
+}
+
+func write(f conn, b []byte) error {
+	f.SetWriteDeadline(time.Now().Add(writeTimeout))
+	_, err := f.Write(b)
+	return err
+}
+
 // Port is an open panel. Frames are sent by a writer goroutine that always
 // takes the newest one; a lost port is reopened in the background.
 type Port struct {
@@ -32,6 +77,7 @@ type Port struct {
 	brightness byte
 
 	frames chan []byte // depth 1: a pending frame is replaced, never queued
+	bright chan byte   // depth 1: same replace-pending pattern as frames
 	quit   chan struct{}
 	done   chan struct{}
 
@@ -42,7 +88,8 @@ type Port struct {
 // Open opens the port and waits for the ESP to introduce itself.
 func Open(path string, baud int, brightness byte) (*Port, proto.InfoMsg, error) {
 	p := &Port{path: path, baud: baud, brightness: brightness,
-		frames: make(chan []byte, 1), quit: make(chan struct{}), done: make(chan struct{})}
+		frames: make(chan []byte, 1), bright: make(chan byte, 1),
+		quit: make(chan struct{}), done: make(chan struct{})}
 	f, info, err := p.connect()
 	if err != nil {
 		return nil, info, err
@@ -60,6 +107,19 @@ func (p *Port) Send(frame [][]color.RGBA) {
 	}
 	select {
 	case p.frames <- b:
+	default:
+	}
+}
+
+// SetBrightness queues a new brightness for the panel, replacing one that is
+// still waiting. It never blocks the caller.
+func (p *Port) SetBrightness(b byte) {
+	select {
+	case <-p.bright:
+	default:
+	}
+	select {
+	case p.bright <- b:
 	default:
 	}
 }
@@ -109,8 +169,8 @@ func openRaw(path string, baud int) (*os.File, error) {
 }
 
 // connect opens the port, says HELLO until INFO comes back and sends CONFIG.
-func (p *Port) connect() (f *os.File, info proto.InfoMsg, err error) {
-	if f, err = openRaw(p.path, p.baud); err != nil {
+func (p *Port) connect() (f conn, info proto.InfoMsg, err error) {
+	if f, err = p.dial(); err != nil {
 		return nil, info, err
 	}
 	defer func() {
@@ -119,24 +179,25 @@ func (p *Port) connect() (f *os.File, info proto.InfoMsg, err error) {
 			f = nil
 		}
 	}()
-	time.Sleep(bootWait)
 	hello := proto.Encode(nil, proto.Hello, 0, nil)
-
-	// A CP2102 whose receive buffer overflowed while the port was closed (the
-	// ESP sends a STATUS every second) replays stale bytes at full USB speed
-	// until the host writes something. Write, let the junk land, drop it.
-	if _, err = f.Write(hello); err != nil {
-		return
-	}
-	time.Sleep(settle)
-	if err = flushInput(f); err != nil {
-		return
+	if tty, ok := f.(*os.File); ok {
+		time.Sleep(bootWait)
+		// A CP2102 whose receive buffer overflowed while the port was closed (the
+		// ESP sends a STATUS every second) replays stale bytes at full USB speed
+		// until the host writes something. Write, let the junk land, drop it.
+		if err = write(f, hello); err != nil {
+			return
+		}
+		time.Sleep(settle)
+		if err = flushInput(tty); err != nil {
+			return
+		}
 	}
 
 	d := proto.Decoder{Max: 64}
 	buf := make([]byte, 4096)
 	for end := time.Now().Add(5 * time.Second); time.Now().Before(end); {
-		if _, err = f.Write(hello); err != nil {
+		if err = write(f, hello); err != nil {
 			return
 		}
 		f.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
@@ -149,10 +210,16 @@ func (p *Port) connect() (f *os.File, info proto.InfoMsg, err error) {
 				return f, info, rerr
 			}
 			for _, pkt := range d.Feed(buf[:n]) {
+				if pkt.Type != proto.Info {
+					continue
+				}
 				var ok bool
-				if info, ok = proto.ParseInfo(pkt.Payload); ok && pkt.Type == proto.Info {
+				if info, ok = proto.ParseInfo(pkt.Payload); ok {
 					f.SetReadDeadline(time.Time{})
-					_, err = f.Write(proto.Encode(nil, proto.Config, 1, proto.ConfigPayload(p.brightness)))
+					p.mu.Lock()
+					b := p.brightness
+					p.mu.Unlock()
+					err = write(f, proto.Encode(nil, proto.Config, 1, proto.ConfigPayload(b)))
 					return
 				}
 			}
@@ -173,9 +240,10 @@ func flushInput(f *os.File) error {
 }
 
 // read keeps the latest STATUS until the port fails.
-func (p *Port) read(f *os.File, errc chan<- error) {
+func (p *Port) read(f conn, errc chan<- error) {
 	d := proto.Decoder{Max: 64}
 	buf := make([]byte, 256)
+	f.SetReadDeadline(time.Now().Add(statusTimeout))
 	for {
 		n, err := f.Read(buf)
 		if err != nil {
@@ -184,6 +252,7 @@ func (p *Port) read(f *os.File, errc chan<- error) {
 		}
 		for _, pkt := range d.Feed(buf[:n]) {
 			if s, ok := proto.ParseStatus(pkt.Payload); ok && pkt.Type == proto.Status {
+				f.SetReadDeadline(time.Now().Add(statusTimeout))
 				p.mu.Lock()
 				p.status = s
 				p.mu.Unlock()
@@ -192,7 +261,7 @@ func (p *Port) read(f *os.File, errc chan<- error) {
 	}
 }
 
-func (p *Port) run(f *os.File) {
+func (p *Port) run(f conn) {
 	defer close(p.done)
 	seq := byte(2) // HELLO and CONFIG took 0 and 1
 	var pkt []byte
@@ -205,11 +274,19 @@ func (p *Port) run(f *os.File) {
 			case b := <-p.frames:
 				pkt = proto.Encode(pkt[:0], proto.Frame, seq, b)
 				seq++
-				_, err = f.Write(pkt)
+				err = write(f, pkt)
+			case v := <-p.bright:
+				p.mu.Lock()
+				p.brightness = v
+				p.mu.Unlock()
+				pkt = proto.Encode(pkt[:0], proto.Config, seq, proto.ConfigPayload(v))
+				seq++
+				err = write(f, pkt)
 			case err = <-errc:
 			case <-p.quit:
-				f.Write(proto.Encode(nil, proto.Blank, seq, nil))
+				write(f, proto.Encode(nil, proto.Blank, seq, nil))
 				f.Close()
+				<-errc // wait for the reader to notice and stop touching p.status/statusTimeout
 				return
 			}
 		}
@@ -220,7 +297,7 @@ func (p *Port) run(f *os.File) {
 			select {
 			case <-p.quit:
 				return
-			case <-time.After(time.Second):
+			case <-time.After(retry):
 			}
 			f, _, _ = p.connect()
 		}

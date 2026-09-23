@@ -1,8 +1,10 @@
 package audio
 
 import (
+	"bytes"
 	"context"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -45,5 +47,42 @@ func TestParecArgsRequestLowLatency(t *testing.T) {
 	c.defaults()
 	if !slices.Contains(c.Args, "--latency-msec=20") {
 		t.Fatalf("parec args lack a latency hint (default fragments are ~380 ms): %v", c.Args)
+	}
+}
+
+func TestTailWriterKeepsOnlyLastBytes(t *testing.T) {
+	tw := &tailWriter{n: 4096}
+	// write far more than the cap, in chunks, and check it never grows beyond it.
+	chunk := bytes.Repeat([]byte("x"), 1000)
+	for i := 0; i < 10; i++ {
+		tw.Write(chunk)
+		if len(tw.buf) > 4096 {
+			t.Fatalf("grew beyond cap: %d bytes", len(tw.buf))
+		}
+	}
+	if len(tw.buf) != 4096 {
+		t.Fatalf("want exactly 4096 bytes kept, got %d", len(tw.buf))
+	}
+	// last write is "y"*50; the tail must end with it.
+	tw.Write([]byte(strings.Repeat("y", 50)))
+	if !strings.HasSuffix(string(tw.buf), strings.Repeat("y", 50)) {
+		t.Fatalf("tail doesn't end with the most recent write: %q", tw.buf[len(tw.buf)-60:])
+	}
+}
+
+func TestStartDeliversStderrToWriterAndError(t *testing.T) {
+	var buf bytes.Buffer
+	c, err := Start(context.Background(), Config{Command: "sh", Args: []string{"-c", "echo oops >&2; exit 3"}, Stderr: &buf})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range c.Blocks() {
+	}
+	werr := c.Wait()
+	if werr == nil || !strings.Contains(werr.Error(), "oops") {
+		t.Fatalf("Wait() error should contain child stderr: %v", werr)
+	}
+	if !strings.Contains(buf.String(), "oops") {
+		t.Fatalf("stderr should also have been copied to the configured writer: %q", buf.String())
 	}
 }
