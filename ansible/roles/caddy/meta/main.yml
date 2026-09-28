@@ -1,0 +1,7 @@
+---
+dependencies:
+  - role: podman_compose
+    vars:
+      podman_compose_name: caddy
+      podman_compose_src: compose.yml.j2
+      podman_compose_templates: [Caddyfile.j2]

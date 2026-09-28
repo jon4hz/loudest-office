@@ -1,0 +1,19 @@
+---
+services:
+  # the visualizer's idle loop; web UI on 127.0.0.1:8000
+  tronbyt:
+    image: ghcr.io/tronbyt/server:2.4.0
+    container_name: tronbyt
+    restart: unless-stopped
+    network_mode: host
+    init: true
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./data:/app/data
+    environment:
+      PUID: "0"
+      PGID: "0"
+      # only the caddy role, which lets no one in without a Home Assistant login,
+      # and the visualizer reach it: then the one account can log in on its own
+      TRONBYT_HOST: 127.0.0.1
+      SINGLE_USER_AUTO_LOGIN: "true"

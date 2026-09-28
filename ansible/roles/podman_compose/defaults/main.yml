@@ -3,3 +3,14 @@
 podman_compose_src: "{{ podman_compose_name }}/compose.yml.j2"
 # extra groups for the service user, e.g. audio for /dev/snd access
 podman_compose_user_groups: []
+# extra files or directories (searched like the compose template) copied into the
+# service user's home before the containers start, e.g. a build context
+podman_compose_files: []
+# extra templates (searched like the compose template) rendered into the service
+# user's home, without the .j2, before the containers start, e.g. a config file
+podman_compose_templates: []
+# rebuild the services that have a build section on every (re)start
+podman_compose_build: false
+# device unit the service follows: it stops when the device goes away and starts
+# when it (re)appears, so the containers never hold a stale device node
+podman_compose_binds_to: ""

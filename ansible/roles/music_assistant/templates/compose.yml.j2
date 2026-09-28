@@ -30,12 +30,3 @@ services:
       SENDSPIN_SERVER: 127.0.0.1:8927
       SENDSPIN_OUTPUT: alsa:hw:CARD=sndrpihifiberry,DEV=0
       SENDSPIN_ID: loudest-office
-
-  caddy:
-    image: docker.io/caddy:2.11.4
-    container_name: caddy
-    restart: unless-stopped
-    network_mode: host
-    command: caddy reverse-proxy --from {{ ansible_host }} --to localhost:8095 --internal-certs
-    volumes:
-      - ./caddy:/data

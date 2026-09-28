@@ -1,0 +1,16 @@
+# Announces %i over mDNS with the address of the default route, without a
+# reverse (PTR) record, which belongs to the Pi's own host name.
+[Unit]
+Description=mDNS alias %i
+Requires=avahi-daemon.service
+After=avahi-daemon.service network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/bin/sh -c 'exec avahi-publish -a -R %i "$$(ip -4 route get 1.1.1.1 | grep -o "src [^ ]*" | cut -d" " -f2)"'
+# no route yet at boot, or avahi restarted
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

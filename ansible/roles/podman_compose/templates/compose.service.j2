@@ -2,14 +2,18 @@
 Description={{ podman_compose_name }} (podman-compose)
 After=network-online.target
 Wants=network-online.target
+{% if podman_compose_binds_to %}
+BindsTo={{ podman_compose_binds_to }}
+After={{ podman_compose_binds_to }}
+{% endif %}
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=%h
-ExecStart=/usr/bin/podman-compose up -d --force-recreate --remove-orphans
+ExecStart=/usr/bin/podman-compose up -d{{ ' --build' if podman_compose_build else '' }} --force-recreate --remove-orphans
 ExecStop=/usr/bin/podman-compose down
 TimeoutStopSec=120
 
 [Install]
-WantedBy=default.target
+WantedBy=default.target{{ ' ' ~ podman_compose_binds_to if podman_compose_binds_to else '' }}

@@ -1,0 +1,10 @@
+---
+# https reverse proxy, internal CA: one site per host name. Host names in .local
+# other than the Pi's own are announced over mDNS as aliases of the Pi. Keep them
+# single-label (foo.local, not foo.bar.local): nss-mdns does not resolve more.
+caddy_sites: []
+#  - { host: loudestoffice.local, to: "127.0.0.1:8123" }
+# ha_ingress (with ha_origin, Home Assistant's URL) puts a site behind the Home
+# Assistant login: the name of an ingress panel with work_mode: auth.
+
+caddy_aliases: "{{ caddy_sites | map(attribute='host') | select('search', '\\.local$') | reject('eq', ansible_host) | list }}"

@@ -1,0 +1,16 @@
+---
+# https://github.com/lovelylain/hass_ingress: ingress panels without the Supervisor.
+# Installed once; afterwards HACS may take over its updates.
+home_assistant_ingress_version: 1.3.2
+
+# Registry settings are not YAML: Ansible sets them through the websocket API with
+# a long-lived token (profile > security), created after onboarding. Vault it.
+# Empty token = registry settings are left alone.
+home_assistant_token: ""
+# HTTP settings (they left YAML too; unset ones keep their value). Behind the caddy
+# role, on the host network, so the proxy is localhost. Empty = left alone.
+home_assistant_http:
+  use_x_forwarded_for: true
+  trusted_proxies: [127.0.0.1, "::1"]
+# the areas, exactly: missing ones are created, all others deleted. Empty = left alone.
+home_assistant_areas: []
