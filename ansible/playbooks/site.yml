@@ -14,9 +14,32 @@
           - { port: "32768:60999", proto: tcp } # spotify connect zeroconf handshake
           - { port: 80, proto: tcp } # caddy http -> https redirect
           - { port: 443, proto: tcp } # caddy https reverse proxy
+          - { port: 8123, proto: tcp } # home assistant
+          - { port: 8443, proto: tcp } # caddy https: tronbyt server web ui
 
     - role: hifiberry
       tags: [hifiberry]
 
     - role: music_assistant
       tags: [music_assistant]
+
+    - role: home_assistant
+      tags: [home_assistant]
+
+    - role: tronbyt
+      tags: [tronbyt]
+
+    - role: caddy
+      tags: [caddy]
+      vars:
+        caddy_sites:
+          - { host: "{{ ansible_host }}", to: "127.0.0.1:8123" } # home assistant
+          - { host: loudestoffice-ma.local, to: "127.0.0.1:8095" } # music assistant
+          # tronbyt, behind the home assistant login and framed by it
+          - host: "{{ ansible_host }}:8443"
+            to: "127.0.0.1:8000"
+            ha_ingress: tronbyt
+            ha_origin: "https://{{ ansible_host }}"
+
+    - role: visualizer
+      tags: [visualizer]

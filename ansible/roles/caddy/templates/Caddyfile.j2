@@ -1,0 +1,30 @@
+{{ ansible_managed | comment }}
+{% for site in caddy_sites %}
+
+{{ site.host }} {
+	tls internal
+{% if site.ha_ingress is defined %}
+	# Home Assistant decides (hass_ingress, work_mode: auth): a 401 carries the way
+	# to its login, and after it the cookie that lets the browser through
+	forward_auth 127.0.0.1:8123 {
+		uri /api/ingress/_/auth
+		header_up X-Ingress-Name {{ site.ha_ingress }}
+		header_up X-Original-URL {scheme}://{hostport}{uri}
+		header_up X-Hass-Origin {{ site.ha_origin }}
+		@login_cookie {
+			status 401
+			header Set-Cookie *
+		}
+		handle_response @login_cookie {
+			header Set-Cookie {rp.header.Set-Cookie}
+			redir {rp.header.Location}
+		}
+		@login status 401
+		handle_response @login {
+			redir {rp.header.Location}
+		}
+	}
+{% endif %}
+	reverse_proxy {{ site.to }}
+}
+{% endfor %}

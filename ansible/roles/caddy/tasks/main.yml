@@ -1,0 +1,42 @@
+---
+# One-time: the proxy used to be part of the music_assistant role. Its data holds
+# the internal CA, so devices that trust that CA keep trusting the proxy.
+# ~musicassistant/caddy stays behind; delete it once the proxy works.
+- name: Take over the proxy's data from the music_assistant role
+  ansible.builtin.shell: |
+    set -e
+    if [ -d ~musicassistant/caddy ]; then
+      systemctl --user -M {{ podman_compose_user.name }}@ stop compose.service
+      rm -rf data
+      cp -a ~musicassistant/caddy data
+      chown -R {{ podman_compose_user.name }}: data
+    fi
+    touch .data-migrated
+  args:
+    chdir: "{{ podman_compose_user.home }}"
+    creates: "{{ podman_compose_user.home }}/.data-migrated"
+  notify: restart_compose_service
+
+# the handler uses podman_compose_user, which the next service using podman_compose overwrites
+- name: Restart the compose service if needed
+  ansible.builtin.meta: flush_handlers
+
+- name: Install avahi-publish
+  ansible.builtin.apt:
+    name: avahi-utils
+    state: present
+
+- name: Deploy the mDNS alias unit
+  ansible.builtin.copy:
+    src: avahi-alias@.service
+    dest: /etc/systemd/system/avahi-alias@.service
+    mode: "0644"
+  notify: restart_avahi_aliases
+
+- name: Enable mDNS aliases
+  ansible.builtin.systemd_service:
+    name: avahi-alias@{{ item }}.service
+    daemon_reload: true
+    enabled: true
+    state: started
+  loop: "{{ caddy_aliases }}"

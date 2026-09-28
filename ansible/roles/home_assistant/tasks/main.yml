@@ -1,0 +1,87 @@
+---
+- name: Install unzip for the ingress release
+  ansible.builtin.apt:
+    name: unzip
+    state: present
+
+- name: Create config directories
+  ansible.builtin.file:
+    path: "{{ podman_compose_user.home }}/config/{{ item }}"
+    state: directory
+    owner: "{{ podman_compose_user.name }}"
+    group: "{{ podman_compose_user.name }}"
+    mode: "0750"
+  loop: ["", custom_components, custom_components/ingress]
+
+# configuration.yaml includes them; Home Assistant only creates them next to a default config
+- name: Create the files the UI editors write
+  ansible.builtin.copy:
+    dest: "{{ podman_compose_user.home }}/config/{{ item.name }}"
+    content: "{{ item.content }}"
+    force: false
+    owner: "{{ podman_compose_user.name }}"
+    group: "{{ podman_compose_user.name }}"
+    mode: "0640"
+  loop:
+    - { name: automations.yaml, content: "[]\n" }
+    - { name: scripts.yaml, content: "" }
+    - { name: scenes.yaml, content: "" }
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Install hass_ingress
+  ansible.builtin.unarchive:
+    src: https://github.com/lovelylain/hass_ingress/releases/download/{{ home_assistant_ingress_version }}/ingress.zip
+    remote_src: true
+    dest: "{{ podman_compose_user.home }}/config/custom_components/ingress"
+    creates: "{{ podman_compose_user.home }}/config/custom_components/ingress/manifest.json"
+    owner: "{{ podman_compose_user.name }}"
+    group: "{{ podman_compose_user.name }}"
+  notify: restart_compose_service
+
+- name: Deploy the Music Assistant login check
+  ansible.builtin.copy:
+    src: auth_music_assistant.py
+    dest: "{{ podman_compose_user.home }}/config/auth_music_assistant.py"
+    owner: "{{ podman_compose_user.name }}"
+    group: "{{ podman_compose_user.name }}"
+    mode: "0640"
+
+- name: Deploy configuration.yaml
+  ansible.builtin.template:
+    src: configuration.yaml.j2
+    dest: "{{ podman_compose_user.home }}/config/configuration.yaml"
+    owner: "{{ podman_compose_user.name }}"
+    group: "{{ podman_compose_user.name }}"
+    mode: "0640"
+  notify: restart_compose_service
+
+# the handler uses podman_compose_user, which the next service using podman_compose overwrites
+- name: Restart the compose service if needed
+  ansible.builtin.meta: flush_handlers
+
+- name: Install the websocket client for the home_assistant_* modules
+  ansible.builtin.apt:
+    name: python3-websocket
+    state: present
+
+# Home Assistant may still be starting after a restart above; a bad token is final
+- name: Set the HTTP settings
+  home_assistant_http:
+    config: "{{ home_assistant_http }}"
+    token: "{{ home_assistant_token }}"
+  when: home_assistant_token | string | length > 0 and home_assistant_http | length > 0
+  register: home_assistant_http_result
+  until: home_assistant_http_result is succeeded or home_assistant_http_result.msg is search('^auth:')
+  retries: 30
+  delay: 5
+
+- name: Set the areas
+  home_assistant_areas:
+    areas: "{{ home_assistant_areas }}"
+    token: "{{ home_assistant_token }}"
+  when: home_assistant_token | string | length > 0 and home_assistant_areas | length > 0
+  register: home_assistant_areas_result
+  until: home_assistant_areas_result is succeeded or home_assistant_areas_result.msg is search('^auth:')
+  retries: 30
+  delay: 5

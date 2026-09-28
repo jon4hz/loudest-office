@@ -1,0 +1,18 @@
+---
+services:
+  visualizer:
+    image: localhost/visualizer:latest
+    build: ./build
+    container_name: visualizer
+    restart: unless-stopped
+    network_mode: host
+    devices:
+      - /dev/snd:/dev/snd
+      - {{ visualizer_serial }}:{{ visualizer_serial }}
+    volumes:
+      - ./config.yaml:/etc/spectrum/config.yaml:ro
+      - ./data:/data
+    environment:
+      TZ: "{{ visualizer_timezone }}"
+    group_add:
+      - keep-groups

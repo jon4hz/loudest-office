@@ -1,0 +1,46 @@
+{{ ansible_managed | comment }}
+# Settings made in the UI live in .storage; only YAML-only ones belong here.
+
+homeassistant:
+  auth_providers:
+    # Music Assistant's users log in with their MA credentials (files/auth_music_assistant.py)
+    - type: command_line
+      name: Music Assistant
+      command: /usr/local/bin/python3
+      args: [/config/auth_music_assistant.py]
+      meta: true
+    - type: homeassistant
+
+# Loads default set of integrations. Do not remove.
+default_config:
+
+automation: !include automations.yaml
+script: !include scripts.yaml
+scene: !include scenes.yaml
+
+# Sidebar panels (custom_components/ingress). work_mode ingress proxies through
+# Home Assistant after its login; that needs an app that works under a path prefix.
+ingress:
+  # the visualizer's trusted_proxy (127.0.0.1) makes this its only way in
+  visualizer:
+    work_mode: ingress
+    title: Visualizer
+    icon: mdi:led-strip-variant
+    url: http://127.0.0.1:8099
+  # Music Assistant still asks for its own login in the panel
+  music_assistant:
+    work_mode: ingress
+    title: Music Assistant
+    icon: mdi:music
+    url: http://127.0.0.1:8095
+  # Tronbyt's links are absolute (/...), so no prefix: the browser frames it from the
+  # caddy role, on this host so the cookies count as same-site. Caddy asks this
+  # panel (work_mode auth) whether the browser is logged in to Home Assistant.
+  tronbyt:
+    work_mode: auth
+    # the check's cookie has Path=/ on this host, so with the default name
+    # (ingress_token) it would also reach, and take over, the other panels
+    cookie_name: ingress_token_tronbyt
+    title: Tronbyt
+    icon: mdi:view-grid
+    url: https://{{ ansible_host }}:8443

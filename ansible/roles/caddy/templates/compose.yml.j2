@@ -1,0 +1,11 @@
+---
+services:
+  caddy:
+    image: docker.io/caddy:2.11.4
+    container_name: caddy
+    restart: unless-stopped
+    # :80 (redirect) and :443
+    network_mode: host
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./data:/data
