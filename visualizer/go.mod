@@ -4,7 +4,7 @@ go 1.27.0
 
 require (
 	charm.land/bubbletea/v2 v2.0.9
-	github.com/charmbracelet/fang v1.0.0
+	github.com/charmbracelet/fang/v2 v2.0.1
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/coder/websocket v1.8.15
 	github.com/gen2brain/webp v0.6.4
