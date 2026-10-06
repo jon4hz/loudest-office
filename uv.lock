@@ -1,6 +1,6 @@
 version = 1
-revision = 3
-requires-python = "==3.14.7"
+revision = 5
+requires-python = "==3.14.8"
 resolution-markers = [
     "sys_platform != 'darwin'",
     "sys_platform == 'darwin'",
@@ -208,7 +208,7 @@ wheels = [
 
 [[package]]
 name = "ansible-lint"
-version = "26.8.0"
+version = "26.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ansible-compat" },
@@ -228,14 +228,14 @@ dependencies = [
     { name = "wcmatch" },
     { name = "yamllint" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/79/17/23a03a6595a42445095da9d73883aeb2432002ecb4c130628a6241d44eb9/ansible_lint-26.8.0.tar.gz", hash = "sha256:65cb5efab1ffaedbe23af0fff241a8834294f8ac80a8c838c2143024afc103a4", size = 776383, upload-time = "2026-08-12T07:23:04.006Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/09/b5/841f5ae439a2a039c6045880042d6acd8a8e2fd4e2fb66bc706e321ecb59/ansible_lint-26.9.0.tar.gz", hash = "sha256:cb3265888f30815de0dcf0964d34768b45c98bb4361eea7eb42c0342e81b51b4", size = 826447, upload-time = "2026-09-22T17:05:32.099Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/69/27/c9707a6165683c85ff67cb8e5efa5238ecf26dac0626955971ef02108e84/ansible_lint-26.8.0-py3-none-any.whl", hash = "sha256:94e58501cc7fafaa505dd9daea3bddb4affa6e8efe8217323c06d7194a312f57", size = 334972, upload-time = "2026-08-12T07:23:02.284Z" },
+    { url = "https://files.pythonhosted.org/packages/d6/23/abf992bbe521b4c9cac629d87a5928b35b3a39084ea299df64daed216e55/ansible_lint-26.9.0-py3-none-any.whl", hash = "sha256:4d01903fca9c42f7ce2b366ea5503d0701a27b3c6fdf684276a72888eea57f50", size = 341699, upload-time = "2026-09-22T17:05:30.311Z" },
 ]
 
 [[package]]
 name = "ansible-navigator"
-version = "26.8.0"
+version = "26.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ansible-builder" },
@@ -248,9 +248,9 @@ dependencies = [
     { name = "setuptools" },
     { name = "tzdata" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/80/8b/1107cafff8b3022900894893af7903edd6f83f9f7e6c0d6807dfe0fdee35/ansible_navigator-26.8.0.tar.gz", hash = "sha256:579532a02acbaf8899bc378541421c5d2c5358fd46dd39822547615902299fe4", size = 412224, upload-time = "2026-08-12T07:50:34.348Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fc/c5/ab3485611f98bff4d54552c95e8e18386392cf49856a70c78d5c06e04c98/ansible_navigator-26.9.0.tar.gz", hash = "sha256:30bce88a923e2cf8cd985002e7a213c2bd6252ec496260da6253146b0da18b96", size = 417104, upload-time = "2026-09-23T08:52:54.573Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a5/f8/34515b846e333309f44b8f140ec40aab944718e52d40b59f3d510dd833d0/ansible_navigator-26.8.0-py3-none-any.whl", hash = "sha256:a8b3edcb69a4c494c3566643719661ae5a00605627a102a428df85a91eb66e3f", size = 314353, upload-time = "2026-08-12T07:50:33.021Z" },
+    { url = "https://files.pythonhosted.org/packages/ad/25/6aeb44b3c85756c14b422269b51afc0e82944a817d200c4070c36eea0470/ansible_navigator-26.9.0-py3-none-any.whl", hash = "sha256:791cc856eaec7fff94b02387a599edeaa262bd89b0421275829d2d1020aac622", size = 315223, upload-time = "2026-09-23T08:52:52.787Z" },
 ]
 
 [[package]]
@@ -993,8 +993,8 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "ansible-builder", specifier = "==3.1.1" },
-    { name = "ansible-lint", specifier = "==26.8.0" },
-    { name = "ansible-navigator", specifier = "==26.8.0" },
+    { name = "ansible-lint", specifier = "==26.9.0" },
+    { name = "ansible-navigator", specifier = "==26.9.0" },
 ]
 
 [package.metadata.requires-dev]
