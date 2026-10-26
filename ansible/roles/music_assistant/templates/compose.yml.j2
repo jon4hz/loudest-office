@@ -1,7 +1,7 @@
 ---
 services:
   music-assistant:
-    image: ghcr.io/music-assistant/server:2.10.5@sha256:28023f8c0d96ca2496391f3218a6d70d7ef3ba84db846b3a3f3cd9ce7ef8aedc
+    image: ghcr.io/music-assistant/server:2.10.8@sha256:661e88bea76a9e79f38feca791f6c7373376ab60766ee01f56b66418ca243b68
     container_name: music-assistant
     restart: unless-stopped
     # required for local player discovery (mDNS/uPnP); web UI on :8095, streams on :8097
@@ -15,7 +15,7 @@ services:
       LOG_LEVEL: info
 
   sendspin:
-    image: ghcr.io/music-assistant/local-audio-addon:0.1.13
+    image: ghcr.io/music-assistant/local-audio-addon:0.2.0@sha256:3497ffc3cdaa9c724c7eb672d508ff3b62e6c182d2f39702609254f954fc4b61
     container_name: sendspin
     restart: unless-stopped
     network_mode: host
