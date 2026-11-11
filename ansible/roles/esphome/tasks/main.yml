@@ -1,0 +1,26 @@
+---
+# The Device Builder picks up files in config/ as they change; no restart needed.
+- name: Create the config directory
+  ansible.builtin.file:
+    path: "{{ podman_compose_user.home }}/config"
+    state: directory
+    owner: "{{ podman_compose_user.name }}"
+    group: "{{ podman_compose_user.name }}"
+    mode: "0750"
+
+- name: Deploy the device configs
+  ansible.builtin.copy:
+    src: knob.yaml
+    dest: "{{ podman_compose_user.home }}/config/knob.yaml"
+    owner: "{{ podman_compose_user.name }}"
+    group: "{{ podman_compose_user.name }}"
+    mode: "0640"
+
+- name: Deploy the secrets
+  ansible.builtin.template:
+    src: secrets.yaml.j2
+    dest: "{{ podman_compose_user.home }}/config/secrets.yaml"
+    owner: "{{ podman_compose_user.name }}"
+    group: "{{ podman_compose_user.name }}"
+    mode: "0640"
+  no_log: true

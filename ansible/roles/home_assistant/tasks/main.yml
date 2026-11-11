@@ -11,7 +11,8 @@
     owner: "{{ podman_compose_user.name }}"
     group: "{{ podman_compose_user.name }}"
     mode: "0750"
-  loop: ["", custom_components, custom_components/ingress]
+  # www is served as /local, if it exists when Home Assistant starts
+  loop: ["", custom_components, custom_components/ingress, www]
 
 # configuration.yaml includes them; Home Assistant only creates them next to a default config
 - name: Create the files the UI editors write
@@ -43,6 +44,14 @@
   ansible.builtin.copy:
     src: auth_music_assistant.py
     dest: "{{ podman_compose_user.home }}/config/auth_music_assistant.py"
+    owner: "{{ podman_compose_user.name }}"
+    group: "{{ podman_compose_user.name }}"
+    mode: "0640"
+
+- name: Deploy the knob's cover script
+  ansible.builtin.copy:
+    src: knob_cover.py
+    dest: "{{ podman_compose_user.home }}/config/knob_cover.py"
     owner: "{{ podman_compose_user.name }}"
     group: "{{ podman_compose_user.name }}"
     mode: "0640"

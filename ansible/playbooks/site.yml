@@ -12,10 +12,17 @@
           - { port: 8095, proto: tcp } # music assistant web ui
           - { port: 8097, proto: tcp } # music assistant stream server
           - { port: "32768:60999", proto: tcp } # spotify connect zeroconf handshake
+          # airplay receiver (shairport-sync in music assistant, classic airplay): one rtsp
+          # port per player, 7000 + hash, and the udp_port_base/udp_port_range defaults
+          - { port: "7000:7999", proto: tcp } # airplay rtsp
+          - { port: "6001:6010", proto: udp } # airplay audio, control and timing
           - { port: 80, proto: tcp } # caddy http -> https redirect
           - { port: 443, proto: tcp } # caddy https reverse proxy
           - { port: 8123, proto: tcp } # home assistant
           - { port: 8443, proto: tcp } # caddy https: tronbyt server web ui
+
+    - role: access_point
+      tags: [access_point]
 
     - role: hifiberry
       tags: [hifiberry]
@@ -28,6 +35,9 @@
 
     - role: tronbyt
       tags: [tronbyt]
+
+    - role: esphome
+      tags: [esphome]
 
     - role: caddy
       tags: [caddy]

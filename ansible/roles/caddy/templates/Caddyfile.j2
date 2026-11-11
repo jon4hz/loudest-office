@@ -1,8 +1,23 @@
 {{ ansible_managed | comment }}
+
+# The Pi boots with a stale clock until NTP syncs: certificates issued meanwhile
+# are "expired" once the clock jumps. Month-long certificates (renewed by Caddy
+# after 20 days) ride that out; the intermediate must outlive them.
+{
+	pki {
+		ca local {
+			intermediate_lifetime 180d
+		}
+	}
+}
 {% for site in caddy_sites %}
 
 {{ site.host }} {
-	tls internal
+	tls {
+		issuer internal {
+			lifetime 30d
+		}
+	}
 {% if site.ha_ingress is defined %}
 	# Home Assistant decides (hass_ingress, work_mode: auth): a 401 carries the way
 	# to its login, and after it the cookie that lets the browser through

@@ -15,6 +15,30 @@ homeassistant:
 default_config:
 
 automation: !include automations.yaml
+{% raw %}
+# The knob's cover (esphome/knob.yaml): a new one is scaled down by
+# knob_cover.py to /local/knob_cover.jpg, then the knob is told to load it.
+automation ansible:
+  - alias: Knob cover
+    mode: restart
+    triggers:
+      - trigger: state
+        entity_id: media_player.loudest_office
+        attribute: entity_picture
+      - trigger: homeassistant
+        event: start
+    actions:
+      - action: shell_command.knob_cover
+        data:
+          url: "{{ state_attr('media_player.loudest_office', 'entity_picture') or '' }}"
+      - action: esphome.knob_load_cover
+        continue_on_error: true # the knob may be off
+
+shell_command:
+  # a templated command runs without a shell: the url is one plain argument
+  knob_cover: /usr/local/bin/python3 /config/knob_cover.py {{ url }}
+{% endraw %}
+
 script: !include scripts.yaml
 scene: !include scenes.yaml
 
@@ -33,6 +57,12 @@ ingress:
     title: Music Assistant
     icon: mdi:music
     url: http://127.0.0.1:8095
+  # the ESPHome Device Builder (esphome role); no login of its own, this is its only way in
+  esphome:
+    work_mode: ingress
+    title: ESPHome
+    icon: mdi:chip
+    url: http://127.0.0.1:6052
   # Tronbyt's links are absolute (/...), so no prefix: the browser frames it from the
   # caddy role, on this host so the cookies count as same-site. Caddy asks this
   # panel (work_mode auth) whether the browser is logged in to Home Assistant.
@@ -44,3 +74,33 @@ ingress:
     title: Tronbyt
     icon: mdi:view-grid
     url: https://{{ ansible_host }}:8443
+
+# The knob (esphome/knob.yaml) drives the visualizer through these: it answers
+# 127.0.0.1 only, and Home Assistant runs on the host network.
+{% raw %}
+rest_command:
+  visualizer_show: # bubble: "" = back to the loops
+    url: http://127.0.0.1:8099/api/v1/controller
+    method: PATCH
+    payload: '{"show": {{ bubble | tojson }}}'
+  visualizer_next:
+    url: http://127.0.0.1:8099/api/v1/next
+    method: POST
+  visualizer_brightness:
+    url: http://127.0.0.1:8099/api/v1/panels/panel
+    method: PATCH
+    payload: '{"brightness": {{ brightness | int }}}'
+
+rest:
+  - resource: http://127.0.0.1:8099/api/v1/state
+    scan_interval: 5
+    sensor:
+      - name: Visualizer active
+        value_template: "{{ value_json.active }}"
+      - name: Visualizer pinned
+        value_template: "{{ value_json.settings.show }}"
+      - name: Visualizer brightness
+        value_template: >-
+          {{ value_json.panels | selectattr('name', 'eq', 'panel')
+             | map(attribute='brightness') | first | default(0) }}
+{% endraw %}

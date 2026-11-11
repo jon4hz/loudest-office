@@ -1,0 +1,618 @@
+# Waveshare ESP32-S3-Knob-Touch-LCD-1.8 as the office's remote: Music Assistant and
+# the visualizer, both through Home Assistant. See "The knob" in the README. The
+# esphome role deploys it to the Pi's Device Builder; esphome/knob.yaml links here.
+substitutions:
+  # Music Assistant's player in Home Assistant
+  player: media_player.loudest_office
+  # Home Assistant as the knob reaches it, for the cover art: the Pi on its access
+  # point (access_point_address in the access_point role)
+  ha_url: http://10.42.0.1:8123
+  # seconds without a touch or a turn before the screen goes dark
+  screen_timeout: 60s
+  # clicks of the knob per full turn, for the odometer page (count one turn to check)
+  clicks_per_turn: "20"
+
+esphome:
+  name: knob
+  friendly_name: Knob
+  on_boot:
+    - script.execute: wake # starts the screen timeout
+
+esp32:
+  board: esp32-s3-devkitc-1
+  flash_size: 16MB
+  framework:
+    type: esp-idf
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+logger:
+
+api:
+  encryption:
+    key: !secret api_key
+  # The cover is /local/knob_cover.jpg on Home Assistant, which scales the
+  # track's down to it (knob_cover.py in the home_assistant role: the knob takes
+  # 8 s for a 1200 px one, frozen meanwhile) and calls this when it is ready.
+  actions:
+    - action: load_cover
+      then:
+        - component.update: cover
+  on_client_connected:
+    - component.update: cover
+
+ota:
+  - platform: esphome
+    encryption: {} # the api key
+
+# The Pi's access point (the access_point role). A fixed address below its DHCP
+# range (.10 and up), so Home Assistant can add the knob by IP.
+wifi:
+  ssid: !secret ap_ssid
+  password: !secret ap_password
+  # Asleep between beacons the knob misses the AP's broadcasts, which the dongle
+  # (rtw88) does not hold back for it: the Pi's ARP requests go unanswered and
+  # Home Assistant never reaches it. Costs battery.
+  power_save_mode: none
+  manual_ip:
+    static_ip: 10.42.0.2
+    gateway: 10.42.0.1
+    subnet: 255.255.255.0
+    dns1: 10.42.0.1
+
+sensor:
+  - platform: wifi_signal
+    name: WiFi signal
+    update_interval: 60s
+  - platform: uptime
+    name: Uptime
+  # the chip's own: the panel has gone blank (lit, no picture) after running a while
+  - platform: internal_temperature
+    name: Temperature
+    update_interval: 60s
+
+  # Music Assistant's volume, 0..1. A turn in progress wins over the echo of the last one.
+  - platform: homeassistant
+    id: ha_volume
+    entity_id: $player
+    attribute: volume_level
+    on_value:
+      - if:
+          condition:
+            not:
+              script.is_running: send_volume
+          then:
+            - lambda: id(volume) = x;
+            - script.execute: show_volume
+
+  # the HUB75 panel's brightness, 1..255 (rest sensor in configuration.yaml.j2)
+  - platform: homeassistant
+    id: ha_brightness
+    entity_id: sensor.visualizer_brightness
+    on_value:
+      - lvgl.arc.update:
+          id: brightness_arc
+          value: !lambda return x;
+
+text_sensor:
+  - platform: homeassistant
+    id: ha_state
+    entity_id: $player
+    on_value:
+      - lvgl.label.update:
+          id: play_label
+          text: !lambda 'return std::string(x == "playing" ? "" : "");'
+  - platform: homeassistant
+    id: ha_title
+    entity_id: $player
+    attribute: media_title
+    on_value:
+      - lvgl.label.update:
+          id: title_label
+          text: !lambda return x;
+  - platform: homeassistant
+    id: ha_artist
+    entity_id: $player
+    attribute: media_artist
+    on_value:
+      - lvgl.label.update:
+          id: artist_label
+          text: !lambda return x;
+  - platform: homeassistant
+    id: ha_active
+    entity_id: sensor.visualizer_active
+    on_value:
+      - lvgl.label.update:
+          id: active_label
+          text: !lambda return x;
+  # the pinned bubble, "" = the loops; the roller follows it
+  - platform: homeassistant
+    id: ha_pinned
+    entity_id: sensor.visualizer_pinned
+    on_value:
+      - lvgl.roller.update:
+          id: bubble_roller
+          selected_text: !lambda 'return x.empty() || x == "unknown" ? std::string("auto") : x;'
+
+globals:
+  - id: volume
+    type: float
+    initial_value: "0"
+  # the odometer: every click ever, kept across reboots
+  - id: clicks
+    type: int
+    restore_value: true
+    initial_value: "0"
+  # the last 32 clicks' times (millis), a ring, for the turns per second
+  - id: click_t
+    type: uint32_t[32]
+  - id: click_i
+    type: int
+    initial_value: "0"
+  - id: max_rate
+    type: float
+    initial_value: "0"
+  # the comet, as drawn: a change redraws the whole ring, so only a real one is drawn
+  - id: comet_len
+    type: int
+    initial_value: "40"
+  - id: comet_hue
+    type: int
+    initial_value: "200"
+
+# The knob is no quadrature encoder: one line pulses low per click clockwise, the other
+# per click anticlockwise (Waveshare's demo reads it the same way, debounced 6 ms:
+# without it a bouncing contact counts as several clicks). Wrong way round: swap the pins.
+binary_sensor:
+  - platform: gpio
+    id: knob_cw
+    internal: true
+    pin:
+      number: GPIO8
+      inverted: true
+      mode:
+        input: true
+        pullup: true
+    filters:
+      - delayed_on_off: 6ms
+    on_release:
+      - script.execute: { id: knob_step, dir: 1 }
+  - platform: gpio
+    id: knob_ccw
+    internal: true
+    pin:
+      number: GPIO7
+      inverted: true
+      mode:
+        input: true
+        pullup: true
+    filters:
+      - delayed_on_off: 6ms
+    on_release:
+      - script.execute: { id: knob_step, dir: -1 }
+
+script:
+  # one click: the volume on the player page, the bubble on the visualizer page
+  - id: knob_step
+    mode: queued
+    parameters:
+      dir: int
+    then:
+      - script.execute: wake
+      # the odometer counts every click, whatever the page shows
+      - lambda: |-
+          id(clicks)++;
+          id(click_t)[id(click_i)++ % 32] = millis();
+          // the comet rides along: one click = one step of the turn
+          int a = id(clicks) * 360 / ${clicks_per_turn} % 360;
+          lv_arc_set_angles(id(comet), a, a + id(comet_len));
+      - if:
+          condition:
+            lvgl.page.is_showing: player_page
+          then:
+            - lambda: id(volume) = std::clamp(id(volume) + dir * 0.02f, 0.0f, 1.0f);
+            - script.execute: show_volume
+            - script.execute: send_volume
+      - if:
+          condition:
+            lvgl.page.is_showing: visualizer_page
+          then:
+            - lvgl.roller.update:
+                id: bubble_roller
+                selected_index: !lambda |-
+                  int n = id(bubble_roller)->get_options().size();
+                  return std::clamp<int>(id(bubble_roller)->get_selected_index() + dir, 0, n - 1);
+
+  - id: show_volume
+    then:
+      - lvgl.arc.update:
+          id: volume_arc
+          value: !lambda return id(volume) * 100;
+
+  # a fast spin sends one call when it stops, not one per click
+  - id: send_volume
+    mode: restart
+    then:
+      - delay: 150ms
+      - homeassistant.action:
+          action: media_player.volume_set
+          data:
+            entity_id: $player
+            volume_level: !lambda return id(volume);
+      # hold off the echo of the calls still in flight
+      - delay: 1s
+
+  - id: wake
+    mode: restart
+    then:
+      - if:
+          condition: lvgl.is_paused
+          then:
+            - lvgl.resume:
+            - lvgl.widget.redraw:
+      - light.turn_on: backlight
+      - delay: $screen_timeout
+      - light.turn_off: backlight
+      - lvgl.pause:
+
+  - id: pin_bubble
+    then:
+      - homeassistant.action:
+          action: rest_command.visualizer_show
+          data:
+            bubble: !lambda |-
+              auto s = id(bubble_roller)->get_selected_text();
+              return s == "auto" ? std::string("") : s;
+      - script.execute: refresh_visualizer
+
+  # Home Assistant polls the visualizer every 5 s; after a change ask for its
+  # state right away (the three rest sensors share one request).
+  - id: refresh_visualizer
+    mode: restart
+    then:
+      - delay: 300ms
+      - homeassistant.action:
+          action: homeassistant.update_entity
+          data:
+            entity_id: sensor.visualizer_active
+
+# The odometer page: turns per second from the clicks of the last second, the
+# comet grows and shifts its colour with the speed.
+interval:
+  - interval: 100ms
+    then:
+      - if:
+          condition:
+            lvgl.page.is_showing: fun_page
+          then:
+            - lambda: |-
+                uint32_t now = millis();
+                int n = 0;
+                for (auto t : id(click_t))
+                  n += t != 0 && now - t < 1000;
+                float rate = n / float(${clicks_per_turn});
+                id(max_rate) = std::max(id(max_rate), rate);
+                char b[32];
+                snprintf(b, sizeof b, "%.1f", id(clicks) / float(${clicks_per_turn}));
+                if (strcmp(lv_label_get_text(id(turns_label)), b) != 0)
+                  lv_label_set_text(id(turns_label), b);
+                snprintf(b, sizeof b, "%.1f turns/s, best %.1f", rate, id(max_rate));
+                if (strcmp(lv_label_get_text(id(rate_label)), b) != 0)
+                  lv_label_set_text(id(rate_label), b);
+                int len = std::min(40 + int(rate * 60), 330), hue = int(200 + rate * 90) % 360;
+                if (len != id(comet_len)) {
+                  id(comet_len) = len;
+                  int a = id(clicks) * 360 / ${clicks_per_turn} % 360;
+                  lv_arc_set_angles(id(comet), a, a + len);
+                }
+                if (hue != id(comet_hue)) {
+                  id(comet_hue) = hue;
+                  lv_obj_set_style_arc_color(id(comet), lv_color_hsv_to_rgb(hue, 100, 100), LV_PART_INDICATOR);
+                }
+
+
+output:
+  - platform: ledc
+    id: backlight_pwm
+    pin: GPIO47
+    frequency: 50kHz # as Waveshare's firmware drives it
+
+light:
+  - platform: monochromatic
+    id: backlight
+    name: Backlight
+    output: backlight_pwm
+    restore_mode: ALWAYS_ON
+    default_transition_length: 250ms
+
+spi:
+  type: quad
+  clk_pin: GPIO13
+  data_pins: [GPIO15, GPIO16, GPIO17, GPIO18]
+
+display:
+  # the ST77916 init of the Guition JC3636W518 V2 runs this panel; only the pins differ
+  - platform: mipi_spi
+    id: screen
+    model: JC3636W518V2
+    cs_pin: GPIO14
+    reset_pin: GPIO21
+    auto_clear_enabled: false
+    update_interval: never
+i2c:
+  sda: GPIO11
+  scl: GPIO12
+
+touchscreen:
+  - platform: cst816
+    id: touch
+    display: screen
+    interrupt_pin: GPIO9
+    reset_pin: GPIO10
+    on_touch:
+      - script.execute: wake
+
+http_request:
+  verify_ssl: false
+
+image:
+  - platform: online_image
+    id: cover
+    url: ${ha_url}/local/knob_cover.jpg
+    format: JPEG
+    type: RGB565
+    resize: 180x180
+    on_download_finished:
+      - lvgl.image.update:
+          id: cover_image
+          src: cover
+      - lvgl.widget.show: cover_image
+    on_error:
+      - lvgl.widget.hide: cover_image
+
+font:
+  - file: gfonts://Roboto
+    id: roboto_24
+    size: 24
+    glyphsets: [GF_Latin_Core]
+  - file: gfonts://Roboto
+    id: roboto_18
+    size: 18
+    glyphsets: [GF_Latin_Core]
+  - file: gfonts://Roboto
+    id: roboto_64
+    size: 64
+    glyphs: "0123456789."
+
+# Swipe left and right between the two pages.
+lvgl:
+  displays: [screen]
+  touchscreens: [touch]
+  buffer_size: 25%
+  style_definitions:
+    - id: round_button
+      bg_color: 0x303030
+      radius: 30
+      width: 60
+      height: 60
+      text_font: montserrat_28
+      text_color: 0xFFFFFF
+  theme:
+    obj:
+      bg_color: 0x000000
+      text_color: 0xFFFFFF
+      border_width: 0
+  pages:
+    - id: player_page
+      bg_color: 0x000000
+      # on each page: a page is a screen of its own, lvgl's top level is not on it
+      on_swipe_left:
+        - lvgl.page.next:
+      on_swipe_right:
+        - lvgl.page.previous:
+      widgets:
+        - arc:
+            id: volume_arc
+            align: CENTER
+            width: 350
+            height: 350
+            start_angle: 135
+            end_angle: 45
+            arc_width: 10
+            min_value: 0
+            max_value: 100
+            arc_color: 0x202020
+            indicator:
+              arc_color: 0x00BFFF
+              arc_width: 10
+            knob:
+              opa: TRANSP
+            clickable: false
+        - image:
+            id: cover_image
+            src: cover
+            align: CENTER
+            y: -50
+            hidden: true
+        - label:
+            id: title_label
+            align: CENTER
+            y: 65
+            width: 240
+            text_align: CENTER
+            long_mode: SCROLL_CIRCULAR
+            text_font: roboto_24
+            text: ""
+        - label:
+            id: artist_label
+            align: CENTER
+            y: 95
+            width: 220
+            text_align: CENTER
+            long_mode: DOT
+            text_font: roboto_18
+            text_color: 0xA0A0A0
+            text: ""
+        - button:
+            align: CENTER
+            x: -70
+            y: 140
+            styles: round_button
+            widgets:
+              - label: { align: CENTER, text: "" }
+            on_click:
+              - homeassistant.action:
+                  action: media_player.media_previous_track
+                  data: { entity_id: $player }
+        - button:
+            align: CENTER
+            y: 140
+            styles: round_button
+            widgets:
+              - label: { id: play_label, align: CENTER, text: "" }
+            on_click:
+              - homeassistant.action:
+                  action: media_player.media_play_pause
+                  data: { entity_id: $player }
+        - button:
+            align: CENTER
+            x: 70
+            y: 140
+            styles: round_button
+            widgets:
+              - label: { align: CENTER, text: "" }
+            on_click:
+              - homeassistant.action:
+                  action: media_player.media_next_track
+                  data: { entity_id: $player }
+
+    - id: visualizer_page
+      bg_color: 0x000000
+      on_swipe_left:
+        - lvgl.page.next:
+      on_swipe_right:
+        - lvgl.page.previous:
+      widgets:
+        # the panel's brightness: drag the ring
+        - arc:
+            id: brightness_arc
+            align: CENTER
+            width: 350
+            height: 350
+            start_angle: 135
+            end_angle: 45
+            arc_width: 10
+            min_value: 1
+            max_value: 255
+            adv_hittest: true
+            arc_color: 0x202020
+            indicator:
+              arc_color: 0xFFB000
+              arc_width: 10
+            on_release:
+              - homeassistant.action:
+                  action: rest_command.visualizer_brightness
+                  data:
+                    brightness: !lambda return x;
+              - script.execute: refresh_visualizer
+        - label:
+            id: active_label
+            align: CENTER
+            y: -120
+            text_font: roboto_18
+            text_color: 0xA0A0A0
+            text: ""
+        # the knob scrolls, a tap pins; auto = the loops
+        - roller:
+            id: bubble_roller
+            align: CENTER
+            y: -10
+            width: 200
+            visible_row_count: 3
+            text_font: roboto_24
+            bg_color: 0x000000
+            selected:
+              bg_color: 0x00BFFF
+            options:
+              - auto
+              - bars
+              - fire
+              - life
+              - stars
+              - fireworks
+              - parrot
+              - invaders
+              - polygon
+              - plasma
+              - ripples
+              - waterfall
+              - pitch
+              - spray
+              - aurora
+              - metaballs
+              - ribbon
+              - tunnel
+              - helix
+              - sparkle
+              - galaxy
+              - clock
+              - tronbyt
+            on_click:
+              - script.execute: pin_bubble
+        - button:
+            align: CENTER
+            y: 120
+            styles: round_button
+            widgets:
+              - label: { align: CENTER, text: "" }
+            on_click:
+              - homeassistant.action:
+                  action: rest_command.visualizer_next
+              - script.execute: refresh_visualizer
+
+    # the odometer: how far the knob has been turned, and how fast right now
+    - id: fun_page
+      bg_color: 0x000000
+      on_swipe_left:
+        - lvgl.page.next:
+      on_swipe_right:
+        - lvgl.page.previous:
+      widgets:
+        # a comet on a full ring; rotated a step per click, longer and bluer to red with speed
+        - arc:
+            id: comet
+            align: CENTER
+            width: 350
+            height: 350
+            start_angle: 0
+            end_angle: 360
+            value: 0 # the comet is drawn by its angles, set from the clicks
+            arc_width: 14
+            arc_color: 0x101010
+            indicator:
+              arc_color: 0x00BFFF
+              arc_width: 14
+              arc_rounded: true
+            knob:
+              opa: TRANSP
+            clickable: false
+        - label:
+            id: turns_label
+            align: CENTER
+            y: -20
+            text_font: roboto_64
+            text: "0.0"
+        - label:
+            align: CENTER
+            y: 30
+            text_font: roboto_18
+            text_color: 0xA0A0A0
+            text: turns
+        - label:
+            id: rate_label
+            align: CENTER
+            y: 80
+            text_font: roboto_18
+            text: "0.0 turns/s"

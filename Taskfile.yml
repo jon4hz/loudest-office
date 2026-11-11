@@ -43,7 +43,7 @@ tasks:
       - "{{.TMP}}/parser_test"
 
   firmware:flash:
-    desc: Build and flash the ESP32 (ENV=esp32dev|esp32s3, extra args via CLI_ARGS)
+    desc: Build and flash the ESP32 (ENV=esp32dev|esp32s3|office|office-s3, extra args via CLI_ARGS)
     dir: firmware
     cmds:
       - pio run -e {{.ENV | default "esp32dev"}} -t upload {{.CLI_ARGS}}
@@ -53,8 +53,8 @@ tasks:
     dir: firmware
     vars:
       ENV: '{{.ENV | default "esp32dev"}}'
-      CHIP: '{{if eq .ENV "esp32s3"}}esp32s3{{else}}esp32{{end}}'
-      BOOT: '{{if eq .ENV "esp32s3"}}0x0{{else}}0x1000{{end}}'
+      CHIP: '{{if hasSuffix "s3" .ENV}}esp32s3{{else}}esp32{{end}}'
+      BOOT: '{{if hasSuffix "s3" .ENV}}0x0{{else}}0x1000{{end}}'
     cmds:
       - pio run -e {{.ENV}}
       - >-
@@ -65,16 +65,16 @@ tasks:
         0x10000 .pio/build/{{.ENV}}/firmware.bin
 
   esphome:compile:
-    desc: Build the Tidbyt's ESPHome firmware
+    desc: Build an ESPHome firmware (FILE=tidbyt.yaml|knob.yaml)
     dir: esphome
     cmds:
-      - uvx esphome@2026.9.0 compile tidbyt.yaml
+      - uvx esphome@2026.9.0 compile {{.FILE | default "tidbyt.yaml"}}
 
   esphome:run:
-    desc: Build and flash the Tidbyt (the first time over USB, then over the air) and show its log
+    desc: Build and flash an ESPHome device (FILE=tidbyt.yaml|knob.yaml; the first time over USB, then over the air) and show its log
     dir: esphome
     cmds:
-      - uvx esphome@2026.9.0 run tidbyt.yaml {{.CLI_ARGS}}
+      - uvx esphome@2026.9.0 run {{.FILE | default "tidbyt.yaml"}} {{.CLI_ARGS}}
 
   visualizer:test:
     desc: Vet and test the visualizer

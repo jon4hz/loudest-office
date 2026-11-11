@@ -1,0 +1,6 @@
+---
+dependencies:
+  - role: podman_compose
+    vars:
+      podman_compose_name: esphome
+      podman_compose_src: compose.yml.j2

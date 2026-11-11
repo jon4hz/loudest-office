@@ -1,0 +1,64 @@
+---
+# ipv4.method shared: NetworkManager runs dnsmasq for DHCP/DNS and masquerades
+# out of whatever holds the default route, so ethernet (metric 100) wins over
+# wlan0 (metric 600) when it's plugged in, without anything else to switch.
+# autoconnect off: access-point.service decides when the AP is up.
+- name: Configure the access point connection
+  community.general.nmcli:
+    conn_name: access-point
+    type: wifi
+    ifname: "{{ access_point_interface }}"
+    ssid: "{{ access_point_ssid }}"
+    autoconnect: false
+    method4: shared
+    ip4: "{{ access_point_address }}"
+    method6: disabled
+    wifi:
+      mode: ap
+      band: bg
+      channel: "{{ access_point_channel }}"
+    wifi_sec:
+      key-mgmt: wpa-psk
+      psk: "{{ access_point_password | mandatory }}"
+      proto: [rsn]
+      pairwise: [ccmp]
+      group: [ccmp]
+      pmf: 2 # optional: protected management frames with every client that supports them
+    state: present
+  no_log: true
+  notify: restart_access_point
+
+- name: Allow DHCP and DNS from access point clients
+  community.general.ufw:
+    rule: allow
+    interface: "{{ access_point_interface }}"
+    direction: in
+    port: "{{ item.port }}"
+    proto: "{{ item.proto }}"
+  loop:
+    - { port: 67, proto: udp } # dhcp
+    - { port: 53, proto: udp } # dns
+    - { port: 53, proto: tcp } # dns
+  loop_control:
+    label: "{{ item.proto }}/{{ item.port }}"
+
+# ufw drops forwarded packets by default; replies come back as established
+- name: Route access point clients upstream
+  community.general.ufw:
+    rule: allow
+    route: true
+    interface_in: "{{ access_point_interface }}"
+
+- name: Deploy the access point unit
+  ansible.builtin.template:
+    src: access-point.service.j2
+    dest: /etc/systemd/system/access-point.service
+    mode: "0644"
+  notify: restart_access_point
+
+- name: Enable the access point
+  ansible.builtin.systemd_service:
+    name: access-point.service
+    daemon_reload: true
+    enabled: true
+    state: started

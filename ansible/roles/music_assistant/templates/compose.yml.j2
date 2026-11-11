@@ -1,7 +1,7 @@
 ---
 services:
   music-assistant:
-    image: ghcr.io/music-assistant/server:2.10.5@sha256:28023f8c0d96ca2496391f3218a6d70d7ef3ba84db846b3a3f3cd9ce7ef8aedc
+    image: ghcr.io/music-assistant/server:2.10.9
     container_name: music-assistant
     restart: unless-stopped
     # required for local player discovery (mDNS/uPnP); web UI on :8095, streams on :8097
@@ -15,7 +15,7 @@ services:
       LOG_LEVEL: info
 
   sendspin:
-    image: ghcr.io/music-assistant/local-audio-addon:0.1.13
+    image: ghcr.io/music-assistant/local-audio-addon:0.2.0
     container_name: sendspin
     restart: unless-stopped
     network_mode: host
@@ -27,6 +27,15 @@ services:
       - ./sendspin:/data
     environment:
       SENDSPIN_NAME: loudest-office
-      SENDSPIN_SERVER: 127.0.0.1:8927
+      # Music Assistant's stream server is bound to the LAN address (its settings,
+      # core module Stream server, Bind to IP): that pins the AirPlay receiver's mDNS
+      # to that interface, so its announcements don't leak the access point's address
+      SENDSPIN_SERVER: "{{ ansible_default_ipv4.address }}:8927"
       SENDSPIN_OUTPUT: alsa:hw:CARD=sndrpihifiberry,DEV=0
+      # sendspin-cli applies the player volume in software, without dither: on the
+      # 16-bit stream Music Assistant picks by default, volume 16 leaves ~12 bits.
+      # 32-bit samples keep the volume control lossless over its whole range. PCM,
+      # not FLAC: Music Assistant encodes FLAC at 16 or 24 bits only and the player
+      # offers no 24-bit; 3 Mbit/s raw over the loopback costs nothing.
+      SENDSPIN_AUDIO_FORMAT: pcm:48000:32:2
       SENDSPIN_ID: loudest-office

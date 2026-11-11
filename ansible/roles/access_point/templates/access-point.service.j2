@@ -1,0 +1,20 @@
+# The AP on {{ access_point_interface }}: `systemctl stop|start access-point`. Tied to the
+# dongle, so pulling it stops the unit and plugging it back in starts it again.
+[Unit]
+Description=WiFi access point on {{ access_point_interface }}
+BindsTo=sys-subsystem-net-devices-{{ access_point_interface }}.device
+After=sys-subsystem-net-devices-{{ access_point_interface }}.device NetworkManager.service
+Requires=NetworkManager.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/nmcli connection up access-point
+# the dongle may be gone already
+ExecStop=-/usr/bin/nmcli connection down access-point
+# at boot NetworkManager can still be taking over the device
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=sys-subsystem-net-devices-{{ access_point_interface }}.device

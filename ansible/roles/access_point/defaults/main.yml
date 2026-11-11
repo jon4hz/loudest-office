@@ -1,0 +1,11 @@
+---
+# the USB dongle; wlan0 (onboard) stays the upstream client
+access_point_interface: wlan1
+access_point_ssid: loudest-office
+# The Pi on the AP. Pinned: without it NetworkManager takes the first free
+# 10.42.x.0/24. Its DHCP hands out .10 to .254, so .2 to .9 are free for fixed
+# addresses (the knob: esphome/knob.yaml).
+access_point_address: 10.42.0.1/24
+
+# 2.4 GHz only: the ESP32s can't do 5 GHz
+access_point_channel: 6

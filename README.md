@@ -17,6 +17,7 @@ We will then use the HiFiBerry DAC output to feed the signal to the CB10 speaker
 * 1x [HiFiBerry Studio DAC/ADC XLR](https://www.hifiberry.com/shop/boards/hifiberry-studio-dacadc-xlr/)
 * 1x [Hub75 Matrix Panel](https://www.bastelgarage.ch/rgb-p3-matrix-panel-64x32-hub75)
 * 1x [ESP32](https://www.espressif.com/en/products/socs/esp32) to control the matrix panel
+* 1x [Waveshare ESP32-S3 Knob Touch LCD 1.8"](https://www.bastelgarage.ch/esp32-s3-knob-touch-lcd-1-8-zoll-mit-akku) as a remote for the music and the visualizer
 
 
 ## Software
@@ -45,7 +46,7 @@ Home Assistant only checks bcrypt). MA admins become admins, guests
 read-only, everyone else users; the Home Assistant provider stays for the
 owner.
 
-The sidebar has three panels from
+The sidebar has four panels from
 [hass_ingress](https://github.com/lovelylain/hass_ingress), which the role
 installs once into `custom_components/ingress`:
 
@@ -53,6 +54,10 @@ installs once into `custom_components/ingress`:
   login, like Supervisor ingress. hass_ingress sends no `X-Remote-User-*`
   headers, so the visualizer logs no user names and Music Assistant, whose
   single sign-on only works behind the Supervisor, asks for its own login.
+* ESPHome is the Device Builder from the `esphome` role, on 127.0.0.1:6052
+  only and without a login of its own, so Home Assistant's is the only one.
+  Its configs live in `~esphome/config` on the Pi; copy `esphome/` over (or
+  paste them in the UI) to build and flash from there.
 * Tronbyt's links are absolute, so it cannot live under a path prefix: the
   panel frames `https://loudestoffice.local:8443` (the `caddy` role), same
   host so the cookies count as same-site. The panel has `work_mode: auth`:
@@ -80,13 +85,42 @@ token (`home_assistant_token`, vaulted, in
 
 Check: `uv run ansible/roles/home_assistant/tests/test_modules.py`.
 
+### Music Assistant
+
+The `music_assistant` role runs Music Assistant with the Sendspin speaker next to
+it. One setting lives in its UI, not in Ansible: core module Stream server, Bind
+to IP, set to the Pi's LAN address. Its AirPlay receiver (shairport-sync, with
+its own mDNS responder) otherwise announces `loudestoffice.local` with the
+address of every interface, the access point's included, and clients on the LAN
+end up with that one. With the bind address set, Music Assistant pins the
+receiver to that interface; the compose file points Sendspin at the same
+address, 127.0.0.1 no longer works. The firewall opens the AirPlay ports in
+`site.yml`.
+
+Gain staging: the Sendspin player (sendspin-cli) applies the Music Assistant
+volume in software, `(volume/100)^1.5`, with no dither, and the DAC's own
+`Digital` mixer stays at 0 dB (the driver caps it there). At volume 16 that is
+-24 dB on the samples, about 0.27 Vrms out of the 4.2 Vrms the Studio DAC/ADC
+XLR delivers balanced, and on a 16-bit stream only ~12 bits are left. The CB10
+then needs 25-30 dB of extra input gain, which lifts the DAC noise floor and the
+truncation noise with the music and, on a mic preset, overloads its preamp:
+"turn the speaker up and it sounds dirty". The compose file therefore pins
+`SENDSPIN_AUDIO_FORMAT` to 32-bit PCM (Music Assistant encodes FLAC at 16 or 24
+bits only, and the player offers no 24-bit), so the software volume costs
+nothing audible at any setting; the player's "preferred Sendspin format" in
+Music Assistant stays on automatic, which follows that pin. Keep the CB10's input on line (mic boost off) at a gain
+that is loud enough with Music Assistant near 100, and use the Music Assistant
+volume (knob, UI) as the everyday control.
+
 ### Reverse proxy
 
 The `caddy` role serves `https://loudestoffice.local` (Home Assistant),
 `https://loudestoffice-ma.local` (Music Assistant) and
 `https://loudestoffice.local:8443` (Tronbyt) with certificates from
-Caddy's internal CA; the sites are `caddy_sites` in `site.yml`. The Pi's
-avahi announces the second name as an alias (`avahi-alias@<name>.service`).
+Caddy's internal CA, good for 30 days and renewed by Caddy after 20, so a stale
+clock at boot cannot leave them expired; the sites are `caddy_sites` in
+`site.yml`. The Pi's avahi announces the second name as an alias
+(`avahi-alias@<name>.service`).
 Keep such names single-label: `ma.loudestoffice.local` would not resolve on
 Linux, whose nss-mdns rejects `.local` names with more than two labels. The
 proxy used to be part of the `music_assistant` role; the first deploy moves its
@@ -96,9 +130,9 @@ so the old proxy frees ports 80 and 443.
 
 ### Visualizer
 
-`visualizer/` holds the Go audio visualizer: fifteen music bubbles (bars, fire, life,
+`visualizer/` holds the Go audio visualizer: twenty music bubbles (bars, fire, life,
 stars, fireworks, parrot, invaders, polygon, plasma, ripples, waterfall, pitch,
-spray, aurora, metaballs), an idle clock and a scrolling event alert, driven by a
+spray, aurora, metaballs, ribbon, tunnel, helix, sparkle, galaxy), an idle clock and a scrolling event alert, driven by a
 controller that decides what to show and loops within it. `--serial` seeds a
 panel named `panel` on the matrix panel; without a terminal (e.g. under
 systemd) it runs headless.
@@ -128,12 +162,26 @@ Wiring (classic ESP32, the library's defaults; the 64x32 panel has no `E` line):
 | B2    | 13   | OE    | 15   |
 | GND   | GND  | CLK   | 16   |
 
+Wiring on an ESP32-S3 (the library's S3 defaults, used by `esp32s3` and
+`office-s3`). On an N16R8 keep off GPIO 26 to 37 (flash and octal PSRAM), 19
+and 20 (native USB) and 43 and 44 (the COM socket's UART):
+
+| HUB75 | GPIO | HUB75 | GPIO |
+|-------|------|-------|------|
+| R1    | 4    | A     | 18   |
+| G1    | 5    | B     | 8    |
+| B1    | 6    | C     | 3    |
+| R2    | 7    | D     | 42   |
+| G2    | 15   | LAT   | 40   |
+| B2    | 16   | OE    | 2    |
+| GND   | GND  | CLK   | 41   |
+
 Power the panel from its own 5 V supply (up to 2.5 A) and tie the grounds.
 
 ```
 uv tool install platformio
 bun                                  # needed for the web UI build
-task firmware:flash                  # ENV=esp32s3 for an S3 with native USB, ENV=office for the 128x64 chain
+task firmware:flash                  # ENV=esp32s3 for an S3 with native USB, ENV=office|office-s3 for the 128x64 chain
 cd visualizer && go run ./cmd/spectrum --serial /dev/ttyUSB0 --brightness 64
 ```
 
@@ -157,7 +205,7 @@ the web UI is "Visualizer" in the Home Assistant sidebar, and the `curl`
 examples below run on the Pi itself (`127.0.0.1:8099`). Drop `trusted_proxy`
 from `visualizer_config` and reopen 8099 in `site.yml` to serve the LAN
 without a login again. It captures the HiFiBerry ADC with `arecord` and streams
-to `/dev/hub75`, a udev symlink for the ESP32's CP2102. The user unit is bound
+to `/dev/hub75`, a udev symlink for the ESP32's CP2102 or an S3's native USB. The user unit is bound
 to that device, so unplugging the ESP32 stops the container and plugging it
 back in starts a fresh one. Plug the ESP32 in before deploying. Logs:
 `sudo -u visualizer XDG_RUNTIME_DIR=/run/user/$(id -u visualizer) podman logs -f visualizer`.
@@ -259,7 +307,9 @@ Flashing the ESP32 while it hangs on the Pi: `task firmware:bin`, copy
 `firmware/fw-esp32dev.bin` over, stop the visualizer (it holds the port), then
 `esptool --chip esp32 --port /dev/hub75 --baud 115200 --no-stub write-flash 0x0 fw-esp32dev.bin`
 (`python3 -m venv` + `pip install esptool`). The stub flasher and higher baud
-rates fail on this CP2102.
+rates fail on this CP2102. An S3 on its native USB takes the image from
+`task firmware:bin ENV=office-s3` with plain
+`esptool --chip esp32s3 --port /dev/hub75 write-flash 0x0 fw-office-s3.bin`.
 
 #### At home: a Tidbyt over WiFi, audio from Music Assistant
 
@@ -395,6 +445,70 @@ enough; it expires after a year, the panel then says `ma: 401` when
 `nowplaying` is shown). The player ID is in the player's settings in Music
 Assistant; a member of a sync group answers for its group. Accented letters
 are drawn as their base letter.
+
+#### The knob
+
+A [Waveshare ESP32-S3-Knob-Touch-LCD-1.8](https://www.waveshare.com/wiki/ESP32-S3-Knob-Touch-LCD-1.8)
+runs ESPHome (`esphome/knob.yaml`) as the office's remote. It only talks to Home
+Assistant: Music Assistant is its `media_player`, and the visualizer, which
+answers 127.0.0.1 only, is reached through the `rest_command`s and `rest`
+sensors in `configuration.yaml.j2` (Home Assistant runs on the host network).
+Swipe between two pages:
+
+* Player: cover, title, artist, previous/play/next. The knob sets the volume
+  (2 % a click; a fast spin sends one call when it stops), the ring shows it.
+* Visualizer: the knob scrolls the bubbles, a tap on the roller pins the picked
+  one (`auto` unpins), the button skips to the next one, the ring is the
+  panel's brightness (drag it). The label on top is the bubble shown now;
+  Home Assistant polls the visualizer every 5 s, the knob asks for a refresh
+  after each of its own changes.
+* Odometer: how many turns the knob has done, ever (kept across reboots),
+  and the turns per second right now with the best so far since boot. A comet
+  on the ring rides along with each click and grows and shifts colour with
+  the speed. `clicks_per_turn` in the `substitutions` is the knob's detents
+  per turn; count one turn to check it.
+
+The cover does not come from Music Assistant directly: it hands out covers
+from the internet as they are, often 1200 px, which the knob takes 8 s to
+decode, frozen meanwhile. An automation in `configuration.yaml.j2` runs
+`knob_cover.py` on every new one, which stores it at 180 px as
+`/local/knob_cover.jpg`, and then calls the knob's `load_cover` action. No
+cover, or one that is no bitmap (the radio's SVG logo), is a black one.
+Check: `uv run ansible/roles/home_assistant/tests/test_knob_cover.py`.
+
+The screen goes dark after `screen_timeout`; a touch or a turn wakes it.
+WiFi power saving is off (`power_save_mode: none`): asleep between beacons the
+knob misses the broadcasts of the Pi's dongle (rtw88), so the Pi's ARP requests
+go unanswered and Home Assistant cannot reach it, although it is associated.
+
+The knob joins the Pi's own access point (the `access_point` role), with the
+fixed address 10.42.0.2; the role pins the Pi there to 10.42.0.1/24
+(`access_point_address`), whose DHCP starts at .10. Put the AP's SSID and
+password into `ap_ssid` and `ap_password` in `esphome/secrets.yaml`, set
+`player` (the entity ID of Music Assistant's player in Home Assistant) in the
+`substitutions` of `knob.yaml`, then flash, the first time over USB with the
+board's USB switch on the ESP32-S3 side (the second chip, an ESP32 for
+Bluetooth audio, keeps its stock firmware), afterwards over the air:
+
+```
+task esphome:run FILE=knob.yaml -- --device /dev/ttyACM0   # later, joined to the AP: --device 10.42.0.2
+```
+
+The `esphome` role also puts `knob.yaml` (it lives in the role,
+`esphome/knob.yaml` links to it) into the Pi's Device Builder, the "ESPHome"
+panel in the Home Assistant sidebar, with a `secrets.yaml` from the
+`access_point` vars and `esphome_api_key` (vaulted, the key the knob is
+flashed with): after `task run -- --tags esphome` it updates the knob over the
+air from there.
+
+Add it in Home Assistant (Settings, Devices, ESPHome, host 10.42.0.2) and, in
+the integration's options, turn on "Allow the device to perform Home Assistant
+actions": without it every button and turn is dropped silently. Deploy the
+Home Assistant side with `task run -- --tags home_assistant`.
+
+The encoder is no quadrature encoder: GPIO 8 pulses once per click clockwise,
+GPIO 7 anticlockwise. If it turns the wrong way, swap the pins. The display
+is an ST77916 on QSPI, ESPHome's `JC3636W518V2` model with this board's pins.
 
 ## Configuring the Pi
 

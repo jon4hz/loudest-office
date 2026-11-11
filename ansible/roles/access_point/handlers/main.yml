@@ -1,0 +1,7 @@
+---
+- name: Restart the access point
+  ansible.builtin.systemd_service:
+    name: access-point.service
+    daemon_reload: true
+    state: restarted
+  listen: restart_access_point

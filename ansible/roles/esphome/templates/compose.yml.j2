@@ -1,0 +1,12 @@
+---
+services:
+  # ESPHome Device Builder (the dashboard); 127.0.0.1:6052 only, the Home Assistant
+  # sidebar panel is the way in. Host network: mDNS and OTA to the devices.
+  esphome:
+    image: ghcr.io/esphome/esphome:2026.9.0
+    container_name: esphome
+    restart: unless-stopped
+    network_mode: host
+    command: [dashboard, /config, --host, 127.0.0.1]
+    volumes:
+      - ./config:/config

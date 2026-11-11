@@ -22,6 +22,8 @@ import (
 	"github.com/jon4hz/loudest-office/visualizer/music/bars"
 	"github.com/jon4hz/loudest-office/visualizer/music/fire"
 	"github.com/jon4hz/loudest-office/visualizer/music/fireworks"
+	"github.com/jon4hz/loudest-office/visualizer/music/galaxy"
+	"github.com/jon4hz/loudest-office/visualizer/music/helix"
 	"github.com/jon4hz/loudest-office/visualizer/music/invaders"
 	"github.com/jon4hz/loudest-office/visualizer/music/life"
 	"github.com/jon4hz/loudest-office/visualizer/music/metaballs"
@@ -29,9 +31,12 @@ import (
 	"github.com/jon4hz/loudest-office/visualizer/music/pitch"
 	"github.com/jon4hz/loudest-office/visualizer/music/plasma"
 	"github.com/jon4hz/loudest-office/visualizer/music/polygon"
+	"github.com/jon4hz/loudest-office/visualizer/music/ribbon"
 	"github.com/jon4hz/loudest-office/visualizer/music/ripples"
+	"github.com/jon4hz/loudest-office/visualizer/music/sparkle"
 	"github.com/jon4hz/loudest-office/visualizer/music/spray"
 	"github.com/jon4hz/loudest-office/visualizer/music/stars"
+	"github.com/jon4hz/loudest-office/visualizer/music/tunnel"
 	"github.com/jon4hz/loudest-office/visualizer/music/waterfall"
 	"github.com/jon4hz/loudest-office/visualizer/nowplaying"
 	"github.com/jon4hz/loudest-office/visualizer/palette"
@@ -529,6 +534,7 @@ func TestHintsCoverEverySetting(t *testing.T) {
 		{New: func() bubble.Bubble { return invaders.New() }, Weight: 1}, {New: func() bubble.Bubble { return polygon.New() }, Weight: 1}, {New: func() bubble.Bubble { return plasma.New() }, Weight: 1},
 		{New: func() bubble.Bubble { return ripples.New() }, Weight: 1}, {New: func() bubble.Bubble { return waterfall.New() }, Weight: 1}, {New: func() bubble.Bubble { return pitch.New() }, Weight: 1},
 		{New: func() bubble.Bubble { return spray.New() }, Weight: 1}, {New: func() bubble.Bubble { return aurora.New() }, Weight: 1}, {New: func() bubble.Bubble { return metaballs.New() }, Weight: 1},
+		{New: func() bubble.Bubble { return ribbon.New() }, Weight: 1}, {New: func() bubble.Bubble { return tunnel.New() }, Weight: 1}, {New: func() bubble.Bubble { return helix.New() }, Weight: 1}, {New: func() bubble.Bubble { return sparkle.New() }, Weight: 1}, {New: func() bubble.Bubble { return galaxy.New() }, Weight: 1},
 		{New: func() bubble.Bubble { return alert.New() }, Weight: 1}, {New: func() bubble.Bubble { return clock.New() }, Weight: 1},
 		{New: func() bubble.Bubble { return tronbyt.New("http://127.0.0.1:1/x/next") }, Weight: 1},
 		{New: func() bubble.Bubble { return nowplaying.New("http://127.0.0.1:1", "t", "p") }, Weight: 1},

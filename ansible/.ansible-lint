@@ -1,0 +1,4 @@
+---
+exclude_paths:
+  # ESPHome's YAML (!secret, !lambda), not Ansible's
+  - roles/esphome/files/

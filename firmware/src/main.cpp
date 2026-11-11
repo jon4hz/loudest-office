@@ -14,6 +14,31 @@
 #endif
 
 static const uint16_t FW_VERSION = 1;
+
+#ifdef PANEL_USB_JTAG
+// An S3 on its native USB (USB-Serial-JTAG) reads the hardware FIFO itself. Arduino's
+// HWCDC acks every USB packet and drops bytes once its queue is full, so a Pi sending
+// faster than the panel draws loses bytes and every frame after fails its CRC. A FIFO
+// left full makes the hardware NAK the host instead, and the Pi's writes wait.
+#include <hal/usb_serial_jtag_ll.h>
+static int rx(uint8_t *buf, int n) {
+  return usb_serial_jtag_ll_rxfifo_data_available() ? usb_serial_jtag_ll_read_rxfifo(buf, n) : 0;
+}
+// tx gives up after 5 ms: with nobody reading the port the FIFO never drains.
+static void tx(const uint8_t *p, int n) {
+  for (uint32_t t = micros(); n > 0 && micros() - t < 5000;) {
+    int k = usb_serial_jtag_ll_write_txfifo(p, n);
+    p += k, n -= k;
+    usb_serial_jtag_ll_txfifo_flush();
+  }
+}
+#else
+static int rx(uint8_t *buf, int n) {
+  int a = Serial.available();
+  return a > 0 ? Serial.read(buf, min(a, n)) : 0;
+}
+static void tx(const uint8_t *p, int n) { Serial.write(p, n); }
+#endif
 static const uint32_t NO_SIGNAL_MS = 2000;
 
 // Several chained modules of MODULE_W x MODULE_H in CHAIN_ROWS x CHAIN_COLS, laid out as
@@ -58,10 +83,11 @@ static void send(uint8_t type, const uint8_t *p, uint16_t n) {
   uint16_t crc = 0xFFFF;
   for (int i = 2; i < 6; i++) crc = crc16(crc, h[i]);
   for (int i = 0; i < n; i++) crc = crc16(crc, p[i]);
-  const uint8_t t[2] = {(uint8_t)crc, (uint8_t)(crc >> 8)};
-  Serial.write(h, 6);
-  Serial.write(p, n);
-  Serial.write(t, 2);
+  uint8_t pkt[6 + 8 + 2]; // the ESP only ever sends INFO and STATUS, 8 bytes each
+  memcpy(pkt, h, 6);
+  memcpy(pkt + 6, p, n);
+  pkt[6 + n] = (uint8_t)crc, pkt[7 + n] = (uint8_t)(crc >> 8);
+  tx(pkt, 8 + n);
 }
 
 // Red, green and blue bars: wrong colours or a garbled picture mean wrong wiring.
@@ -118,8 +144,10 @@ static void handle() {
 }
 
 void setup() {
+#ifndef PANEL_USB_JTAG
   Serial.setRxBufferSize(2 * Parser::MAX + 1024); // a bit more than two frames
   Serial.begin(SERIAL_BAUD);
+#endif
 
 #ifdef CHAIN_TYPE
   HUB75_I2S_CFG cfg(MODULE_W, MODULE_H, CHAIN_ROWS * CHAIN_COLS);
@@ -156,12 +184,9 @@ void setup() {
 
 void loop() {
   static uint8_t buf[512];
-  int n = Serial.available();
-  if (n > 0) {
-    n = Serial.read(buf, min(n, (int)sizeof buf));
-    for (int i = 0; i < n; i++)
-      if (parser.feed(buf[i])) handle();
-  }
+  int n = rx(buf, sizeof buf);
+  for (int i = 0; i < n; i++)
+    if (parser.feed(buf[i])) handle();
 
   uint32_t now = millis();
   if (live && now - lastFrame > NO_SIGNAL_MS) {

@@ -46,6 +46,8 @@ import (
 	"github.com/jon4hz/loudest-office/visualizer/music/bars"
 	"github.com/jon4hz/loudest-office/visualizer/music/fire"
 	"github.com/jon4hz/loudest-office/visualizer/music/fireworks"
+	"github.com/jon4hz/loudest-office/visualizer/music/galaxy"
+	"github.com/jon4hz/loudest-office/visualizer/music/helix"
 	"github.com/jon4hz/loudest-office/visualizer/music/invaders"
 	"github.com/jon4hz/loudest-office/visualizer/music/life"
 	"github.com/jon4hz/loudest-office/visualizer/music/metaballs"
@@ -53,9 +55,12 @@ import (
 	"github.com/jon4hz/loudest-office/visualizer/music/pitch"
 	"github.com/jon4hz/loudest-office/visualizer/music/plasma"
 	"github.com/jon4hz/loudest-office/visualizer/music/polygon"
+	"github.com/jon4hz/loudest-office/visualizer/music/ribbon"
 	"github.com/jon4hz/loudest-office/visualizer/music/ripples"
+	"github.com/jon4hz/loudest-office/visualizer/music/sparkle"
 	"github.com/jon4hz/loudest-office/visualizer/music/spray"
 	"github.com/jon4hz/loudest-office/visualizer/music/stars"
+	"github.com/jon4hz/loudest-office/visualizer/music/tunnel"
 	"github.com/jon4hz/loudest-office/visualizer/music/waterfall"
 	"github.com/jon4hz/loudest-office/visualizer/nowplaying"
 	"github.com/jon4hz/loudest-office/visualizer/proto"
@@ -130,7 +135,9 @@ func run(ctx context.Context, c *config.Config) error {
 		bub(plasma.New, 2), bub(ripples.New, 2),
 		bub(waterfall.New, 2), bub(pitch.New, 2),
 		bub(spray.New, 2), bub(aurora.New, 1),
-		bub(metaballs.New, 2),
+		bub(metaballs.New, 2), bub(ribbon.New, 2),
+		bub(tunnel.New, 2), bub(helix.New, 1),
+		bub(sparkle.New, 1), bub(galaxy.New, 2),
 		bub(alert.New, 1),
 	}
 	if c.Tronbyt != "" { // Tronbyt is the idle loop then, with clock apps of its own; a weight in the state file still wins
